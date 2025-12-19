@@ -9,7 +9,7 @@ import {
     Sprout, Users, ClipboardList, MapPin,
     PlusCircle, Save, ArrowRight, CheckCircle,
     Leaf, Info, History, AlertTriangle,
-    Check, ChevronRight, Compass, Shield, IterationCcw
+    Check, ChevronRight, Compass, Shield, IterationCcw, LogOut
 } from 'lucide-react';
 
 // --- GESTIÓN DE CONFIGURACIÓN (Híbrida: Chat + Vercel) ---
@@ -114,7 +114,7 @@ const WelcomeScreen = ({ setRole }) => (
 );
 
 // --- VISTA COORDINADOR ---
-const CoordinatorView = ({ seeds, groups }) => {
+const CoordinatorView = ({ seeds, groups, onResetRole }) => {
     const [newSeed, setNewSeed] = useState({ species: '', provider: '', treatment: '', quantity: '' });
     const [newGroup, setNewGroup] = useState('');
     const [activeTab, setActiveTab] = useState('seeds');
@@ -158,6 +158,13 @@ const CoordinatorView = ({ seeds, groups }) => {
         <div className="min-h-screen bg-[#f1f5f0] pb-24 font-sans">
             <header className="glass-card sticky top-0 z-30 px-6 py-4 flex justify-between items-center border-b border-emerald-100/50">
                 <div className="flex items-center gap-3">
+                    <button
+                        onClick={onResetRole}
+                        className="p-2 text-emerald-900/30 hover:text-emerald-900/60 transition-colors"
+                        title="Cambiar Perfil"
+                    >
+                        <LogOut size={20} />
+                    </button>
                     <div className="bg-emerald-600 text-white p-2 rounded-xl shadow-md">
                         <ClipboardList size={20} />
                     </div>
@@ -341,7 +348,7 @@ const CoordinatorView = ({ seeds, groups }) => {
 };
 
 // --- VISTA SEMBRADOR ---
-const SowerView = ({ seeds, groups, userId }) => {
+const SowerView = ({ seeds, groups, userId, onResetRole }) => {
     const [selectedGroupId, setSelectedGroupId] = useState(null);
     const [view, setView] = useState('form');
 
@@ -355,7 +362,8 @@ const SowerView = ({ seeds, groups, userId }) => {
     });
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [myLogs, setMyLogs] = useState([]);
-    const [gpsStatus, setGpsStatus] = useState('waiting'); // waiting, success, error
+    const [gpsStatus, setGpsStatus] = useState('waiting'); // waiting, searching, success, error
+    const [currentLocation, setCurrentLocation] = useState({ lat: null, lng: null, acc: null });
 
     useEffect(() => {
         if (!userId) return;
@@ -373,6 +381,33 @@ const SowerView = ({ seeds, groups, userId }) => {
         return () => unsubscribe();
     }, [userId]);
 
+    const captureGPS = async () => {
+        if (!("geolocation" in navigator)) return;
+        setGpsStatus('searching');
+        try {
+            const position = await new Promise((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(resolve, reject, {
+                    enableHighAccuracy: true,
+                    timeout: 8000,
+                    maximumAge: 0
+                });
+            });
+            const location = {
+                lat: position.coords.latitude,
+                lng: position.coords.longitude,
+                acc: position.coords.accuracy
+            };
+            setCurrentLocation(location);
+            setGpsStatus('success');
+            if (window.navigator && window.navigator.vibrate) window.navigator.vibrate(50);
+            return location;
+        } catch (err) {
+            console.warn("GPS falló", err);
+            setGpsStatus('error');
+            return null;
+        }
+    };
+
     const selectedGroup = groups.find(g => g.id === selectedGroupId);
     const mySeeds = selectedGroup ? seeds.filter(s => selectedGroup.assignedSeeds?.includes(s.id)) : [];
 
@@ -382,30 +417,13 @@ const SowerView = ({ seeds, groups, userId }) => {
             return;
         }
         setIsSubmitting(true);
-        setGpsStatus('searching');
 
-        let location = { lat: null, lng: null, acc: null };
+        let location = currentLocation;
 
-        // Intento de GPS rápido (5s timeout)
-        if ("geolocation" in navigator) {
-            try {
-                const position = await new Promise((resolve, reject) => {
-                    navigator.geolocation.getCurrentPosition(resolve, reject, {
-                        enableHighAccuracy: true,
-                        timeout: 5000,
-                        maximumAge: 0
-                    });
-                });
-                location = {
-                    lat: position.coords.latitude,
-                    lng: position.coords.longitude,
-                    acc: position.coords.accuracy
-                };
-                setGpsStatus('success');
-            } catch (err) {
-                console.warn("GPS falló, guardando sin coords", err);
-                setGpsStatus('error');
-            }
+        // Si no tenemos ubicación todavía, intentamos capturarla al vuelo
+        if (!location.lat) {
+            const captured = await captureGPS();
+            if (captured) location = captured;
         }
 
         try {
@@ -420,7 +438,9 @@ const SowerView = ({ seeds, groups, userId }) => {
             });
 
             // Reset parcial (mantenemos contexto de sitio)
-            setFormData(prev => ({ ...prev, quantity: '1', notes: '' }));
+            setFormData(prev => ({ ...prev, quantity: 1, notes: '' }));
+            setCurrentLocation({ lat: null, lng: null, acc: null });
+            setGpsStatus('waiting');
 
             // Feedback táctil/visual si es posible
             if (window.navigator && window.navigator.vibrate) window.navigator.vibrate(200);
@@ -429,7 +449,6 @@ const SowerView = ({ seeds, groups, userId }) => {
             alert("Error guardando: " + error.message);
         } finally {
             setIsSubmitting(false);
-            setTimeout(() => setGpsStatus('waiting'), 2000);
         }
     };
 
@@ -439,11 +458,18 @@ const SowerView = ({ seeds, groups, userId }) => {
                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-400 via-emerald-500 to-emerald-700"></div>
 
                 <div className="text-center mb-10 animate-slideUp">
-                    <div className="inline-flex p-3 rounded-2xl bg-emerald-600 text-white shadow-xl mb-4">
+                    <div className="inline-flex p-3 rounded-2xl bg-emerald-600 text-white shadow-xl mb-4 relative">
                         <Users size={32} />
+                        <button
+                            onClick={onResetRole}
+                            className="absolute -top-2 -right-2 bg-white text-emerald-600 p-1.5 rounded-full shadow-lg border border-emerald-50 hover:bg-emerald-50 transition-colors"
+                            title="Volver al inicio"
+                        >
+                            <LogOut size={14} />
+                        </button>
                     </div>
                     <h2 className="text-3xl font-extrabold text-emerald-950 mb-2">Identifícate</h2>
-                    <p className="text-emerald-800/50 font-medium">Selecciona tu equipo para cargar la mochila digital</p>
+                    <p className="text-emerald-800/50 font-medium px-4">Selecciona tu equipo para cargar la mochila digital</p>
                 </div>
 
                 <div className="grid gap-4 max-w-md mx-auto w-full animate-slideUp [animation-delay:200ms]">
@@ -485,12 +511,21 @@ const SowerView = ({ seeds, groups, userId }) => {
     return (
         <div className="min-h-screen bg-[#f1f5f0] pb-28 font-sans">
             <header className="glass-card sticky top-0 z-30 px-6 py-4 flex justify-between items-end border-b border-amber-100/50">
-                <div>
-                    <div className="flex items-center gap-1.5 mb-0.5">
-                        <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
-                        <span className="text-[10px] font-bold text-amber-900/40 uppercase tracking-widest">Misión en curso</span>
+                <div className="flex gap-4 items-end">
+                    <button
+                        onClick={() => setSelectedGroupId(null)}
+                        className="mb-1 text-emerald-950/30 hover:text-emerald-950/60 transition-colors"
+                        title="Cambiar Equipo"
+                    >
+                        <LogOut size={20} />
+                    </button>
+                    <div>
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                            <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
+                            <span className="text-[10px] font-bold text-amber-900/40 uppercase tracking-widest">Misión en curso</span>
+                        </div>
+                        <h2 className="text-xl font-extrabold text-emerald-950 leading-none">{selectedGroup.name}</h2>
                     </div>
-                    <h2 className="text-xl font-extrabold text-emerald-950 leading-none">{selectedGroup.name}</h2>
                 </div>
                 <div className="bg-emerald-950 text-white px-4 py-2 rounded-2xl shadow-lg border border-emerald-800 flex flex-col items-center min-w-[70px]">
                     <span className="text-[9px] font-bold uppercase tracking-tighter text-emerald-400">Hoyos</span>
@@ -580,29 +615,27 @@ const SowerView = ({ seeds, groups, userId }) => {
                                 </div>
                             </div>
 
-                            {(formData.microsite !== 'Nodriza Muerta') && (
-                                <div className="animate-slideUp">
-                                    <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-[0.2em] block mb-4">Orientación</label>
-                                    <div className="grid grid-cols-4 gap-3">
-                                        {['Norte', 'Este', 'Sur', 'Oeste'].map(o => (
-                                            <button
-                                                key={o}
-                                                onClick={() => setFormData({ ...formData, orientation: o })}
-                                                className={`py-4 rounded-2xl text-xs font-black uppercase border-2 transition-all flex flex-col items-center gap-1 ${formData.orientation === o
-                                                    ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg'
-                                                    : 'bg-emerald-900/5 border-transparent text-emerald-900/40'
-                                                    }`}
-                                            >
-                                                <Compass size={14} className={formData.orientation === o ? 'text-white' : 'text-emerald-200'} />
-                                                {o.charAt(0)}
-                                            </button>
-                                        ))}
-                                    </div>
+                            <div className="animate-slideUp border-t border-emerald-100/20 pt-4">
+                                <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-[0.2em] block mb-4">Orientación respecto al micrositio</label>
+                                <div className="grid grid-cols-4 gap-3">
+                                    {['Norte', 'Este', 'Sur', 'Oeste'].map(o => (
+                                        <button
+                                            key={o}
+                                            onClick={() => setFormData({ ...formData, orientation: o })}
+                                            className={`py-4 rounded-2xl text-xs font-black uppercase border-2 transition-all flex flex-col items-center gap-1 ${formData.orientation === o
+                                                ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg'
+                                                : 'bg-emerald-900/5 border-transparent text-emerald-900/40'
+                                                }`}
+                                        >
+                                            <Compass size={14} className={formData.orientation === o ? 'text-white' : 'text-emerald-200'} />
+                                            {o.charAt(0)}
+                                        </button>
+                                    ))}
                                 </div>
-                            )}
+                            </div>
 
                             <div>
-                                <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-[0.2em] block mb-4">Detalles finales</label>
+                                <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-[0.2em] block mb-4">3. ¿Cómo es el golpe?</label>
                                 <div className="grid grid-cols-2 gap-3">
                                     <button
                                         onClick={() => setFormData({ ...formData, method: formData.method === 'Protector' ? 'Directo' : 'Protector' })}
@@ -614,7 +647,8 @@ const SowerView = ({ seeds, groups, userId }) => {
                                         <Shield size={16} />
                                         {formData.method === 'Protector' ? 'Protector ON' : 'Sin Protector'}
                                     </button>
-                                    <div className="flex bg-emerald-900/5 rounded-2xl p-1 gap-1">
+                                    <div className="flex bg-emerald-900/5 rounded-2xl p-1 gap-1 relative group">
+                                        <div className="absolute -top-4 left-1 text-[8px] font-black text-emerald-800/20 uppercase tracking-widest bg-white px-1">Semillas por golpe</div>
                                         {[1, 2, 3].map(n => (
                                             <button
                                                 key={n}
@@ -637,6 +671,36 @@ const SowerView = ({ seeds, groups, userId }) => {
                                 value={formData.notes}
                                 onChange={e => setFormData({ ...formData, notes: e.target.value })}
                             />
+
+                            {/* EXPLICIT GPS CAPTURE */}
+                            <div className="pt-2">
+                                <button
+                                    onClick={captureGPS}
+                                    className={`w-full flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${gpsStatus === 'success'
+                                        ? 'bg-emerald-50 border-emerald-500 text-emerald-700'
+                                        : gpsStatus === 'searching'
+                                            ? 'bg-amber-50 border-amber-500 text-amber-700 animate-pulse'
+                                            : 'bg-white border-emerald-100 text-emerald-900/40 hover:border-emerald-300'
+                                        }`}
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className={`p-2 rounded-xl ${gpsStatus === 'success' ? 'bg-emerald-500 text-white' : 'bg-emerald-100 text-emerald-600'}`}>
+                                            <MapPin size={20} className={gpsStatus === 'searching' ? 'animate-bounce' : ''} />
+                                        </div>
+                                        <div className="text-left">
+                                            <div className="text-xs font-black uppercase tracking-tight">Geoposicionar Hoyo</div>
+                                            <div className="text-[10px] font-bold opacity-60">
+                                                {gpsStatus === 'success'
+                                                    ? `Precisión: ${currentLocation.acc?.toFixed(1)}m`
+                                                    : gpsStatus === 'searching'
+                                                        ? 'Capturando señal...'
+                                                        : 'Toca para precisión GPS'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {gpsStatus === 'success' && <Check size={20} className="text-emerald-500" />}
+                                </button>
+                            </div>
                         </section>
 
                         <button
@@ -752,7 +816,7 @@ export default function App() {
 
     if (loading) return <LoadingScreen />;
     if (!role) return <WelcomeScreen setRole={setRole} />;
-    if (role === 'coordinator') return <CoordinatorView seeds={seeds} groups={groups} />;
-    if (role === 'sower') return <SowerView seeds={seeds} groups={groups} userId={user.uid} />;
+    if (role === 'coordinator') return <CoordinatorView seeds={seeds} groups={groups} onResetRole={() => setRole(null)} />;
+    if (role === 'sower') return <SowerView seeds={seeds} groups={groups} userId={user.uid} onResetRole={() => setRole(null)} />;
     return <div>Error de estado</div>;
 }
