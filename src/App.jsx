@@ -9,7 +9,8 @@ import {
     Sprout, Users, ClipboardList, MapPin,
     PlusCircle, Save, ArrowRight, CheckCircle,
     Leaf, Info, History, AlertTriangle,
-    Check, ChevronRight, Compass, Shield, IterationCcw, LogOut
+    Check, ChevronRight, Compass, Shield, IterationCcw, LogOut,
+    Camera, X
 } from 'lucide-react';
 
 // --- GESTIÓN DE CONFIGURACIÓN (Híbrida: Chat + Vercel) ---
@@ -44,6 +45,35 @@ const appId = getAppId();
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
+
+const compressImage = (file, maxWidth = 800) => {
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.src = event.target.result;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+
+                if (width > maxWidth) {
+                    height = (maxWidth / width) * height;
+                    width = maxWidth;
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+
+                // Compress to JPEG 0.7 quality
+                resolve(canvas.toDataURL('image/jpeg', 0.7));
+            };
+        };
+    });
+};
 
 // --- COMPONENTES ---
 
@@ -115,7 +145,7 @@ const WelcomeScreen = ({ setRole }) => (
 
 // --- VISTA COORDINADOR ---
 const CoordinatorView = ({ seeds, groups, onResetRole }) => {
-    const [newSeed, setNewSeed] = useState({ species: '', provider: '', treatment: '', quantity: '' });
+    const [newSeed, setNewSeed] = useState({ species: '', provider: '', treatment: '', quantity: '', photo: null });
     const [newGroup, setNewGroup] = useState('');
     const [activeTab, setActiveTab] = useState('seeds');
 
@@ -127,10 +157,18 @@ const CoordinatorView = ({ seeds, groups, onResetRole }) => {
                 ...newSeed,
                 createdAt: serverTimestamp(),
             });
-            setNewSeed({ species: '', provider: '', treatment: '', quantity: '' });
+            setNewSeed({ species: '', provider: '', treatment: '', quantity: '', photo: null });
             // alert('Semilla añadida'); // Comentado para flujo más rápido
         } catch (error) {
             console.error("Error", error);
+        }
+    };
+
+    const handlePhotoChange = async (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const compressed = await compressImage(file);
+            setNewSeed({ ...newSeed, photo: compressed });
         }
     };
 
@@ -219,6 +257,31 @@ const CoordinatorView = ({ seeds, groups, onResetRole }) => {
                                     <div className="space-y-1.5">
                                         <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-widest px-1">Tratamiento</label>
                                         <input placeholder="Ej: Lijada" className="w-full p-4 bg-emerald-900/5 border border-transparent rounded-2xl focus:bg-white focus:border-emerald-500/50 outline-none transition-all font-medium" value={newSeed.treatment} onChange={e => setNewSeed({ ...newSeed, treatment: e.target.value })} />
+                                    </div>
+                                </div>
+
+                                {/* PHOTO CAPTURE UI */}
+                                <div className="space-y-3">
+                                    <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-widest px-1 block">Foto del Lote (Opcional)</label>
+                                    <div className="flex items-center gap-4">
+                                        {!newSeed.photo ? (
+                                            <label className="flex-1 flex flex-col items-center justify-center p-6 border-2 border-dashed border-emerald-100 rounded-2xl bg-emerald-50/30 hover:bg-emerald-50 hover:border-emerald-300 transition-all cursor-pointer group">
+                                                <Camera className="text-emerald-300 group-hover:text-emerald-500 mb-2" size={32} />
+                                                <span className="text-xs font-bold text-emerald-800/40 group-hover:text-emerald-800/60 uppercase tracking-wider">Tomar Foto</span>
+                                                <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoChange} />
+                                            </label>
+                                        ) : (
+                                            <div className="relative w-full aspect-video rounded-2xl overflow-hidden border-2 border-emerald-500 shadow-lg">
+                                                <img src={newSeed.photo} className="w-full h-full object-cover" alt="Seed preview" />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setNewSeed({ ...newSeed, photo: null })}
+                                                    className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full shadow-md hover:bg-red-600 transition-colors"
+                                                >
+                                                    <X size={16} />
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                                 <button type="submit" className="btn-premium w-full bg-emerald-700 hover:bg-emerald-800 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 mt-2">
@@ -358,7 +421,8 @@ const SowerView = ({ seeds, groups, userId, onResetRole }) => {
         orientation: 'Norte',
         method: 'Con Sustrato',
         quantity: '1',
-        notes: ''
+        notes: '',
+        photo: null
     });
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [myLogs, setMyLogs] = useState([]);
@@ -408,6 +472,14 @@ const SowerView = ({ seeds, groups, userId, onResetRole }) => {
         }
     };
 
+    const handlePhotoChange = async (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const compressed = await compressImage(file);
+            setFormData({ ...formData, photo: compressed });
+        }
+    };
+
     const selectedGroup = groups.find(g => g.id === selectedGroupId);
     const mySeeds = selectedGroup ? seeds.filter(s => selectedGroup.assignedSeeds?.includes(s.id)) : [];
 
@@ -438,7 +510,7 @@ const SowerView = ({ seeds, groups, userId, onResetRole }) => {
             });
 
             // Reset parcial (mantenemos contexto de sitio)
-            setFormData(prev => ({ ...prev, quantity: 1, notes: '' }));
+            setFormData(prev => ({ ...prev, quantity: 1, notes: '', photo: null }));
             setCurrentLocation({ lat: null, lng: null, acc: null });
             setGpsStatus('waiting');
 
@@ -700,6 +772,36 @@ const SowerView = ({ seeds, groups, userId, onResetRole }) => {
                                     </div>
                                     {gpsStatus === 'success' && <Check size={20} className="text-emerald-500" />}
                                 </button>
+                            </div>
+
+                            {/* PHOTO CAPTURE SOWER */}
+                            <div className="pt-2">
+                                <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-[0.2em] block mb-3 px-1">Foto del Hoyo (Opcional)</label>
+                                {!formData.photo ? (
+                                    <label className="w-full flex items-center justify-center p-8 border-2 border-dashed border-emerald-100 rounded-[2rem] bg-emerald-50/20 hover:bg-emerald-50 hover:border-emerald-300 transition-all cursor-pointer group">
+                                        <div className="flex flex-col items-center">
+                                            <div className="w-16 h-16 bg-white rounded-3xl flex items-center justify-center text-emerald-300 group-hover:text-emerald-500 shadow-sm transition-all mb-2">
+                                                <Camera size={32} />
+                                            </div>
+                                            <span className="text-[10px] font-black uppercase tracking-widest text-emerald-800/30">Capturar Evidencia</span>
+                                        </div>
+                                        <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoChange} />
+                                    </label>
+                                ) : (
+                                    <div className="relative w-full aspect-video rounded-[2rem] overflow-hidden border-2 border-emerald-500 shadow-xl group">
+                                        <img src={formData.photo} className="w-full h-full object-cover" alt="Sowing preview" />
+                                        <button
+                                            type="button"
+                                            onClick={() => setFormData({ ...formData, photo: null })}
+                                            className="absolute top-4 right-4 p-2 bg-red-500 text-white rounded-2xl shadow-lg hover:bg-red-600 transition-colors"
+                                        >
+                                            <X size={20} />
+                                        </button>
+                                        <div className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-black/50 to-transparent">
+                                            <span className="text-[10px] font-black text-white uppercase tracking-widest">Foto capturada</span>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </section>
 
