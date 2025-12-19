@@ -8,7 +8,8 @@ import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import {
     Sprout, Users, ClipboardList, MapPin,
     PlusCircle, Save, ArrowRight, CheckCircle,
-    Leaf, Info, History, AlertTriangle
+    Leaf, Info, History, AlertTriangle,
+    Check, ChevronRight, Compass, Shield, IterationCcw
 } from 'lucide-react';
 
 // --- GESTIÓN DE CONFIGURACIÓN (Híbrida: Chat + Vercel) ---
@@ -47,46 +48,67 @@ const auth = getAuth(app);
 // --- COMPONENTES ---
 
 const LoadingScreen = () => (
-    <div className="flex flex-col items-center justify-center h-screen bg-green-50 text-green-800">
-        <Sprout className="w-12 h-12 animate-bounce mb-4" />
-        <p className="font-medium">Cargando Sembrador...</p>
+    <div className="flex flex-col items-center justify-center h-screen bg-[#f1f5f0] text-emerald-800">
+        <div className="relative">
+            <div className="w-20 h-20 border-4 border-emerald-100 border-t-emerald-600 rounded-full animate-spin"></div>
+            <Sprout className="w-10 h-10 text-emerald-600 absolute inset-0 m-auto animate-pulse" />
+        </div>
+        <p className="mt-6 font-semibold tracking-wide animate-pulse-subtle">Sincronizando con la tierra...</p>
     </div>
 );
 
 const WelcomeScreen = ({ setRole }) => (
-    <div className="flex flex-col items-center justify-center h-screen bg-green-50 p-6 space-y-8">
-        <div className="text-center">
-            <div className="bg-green-600 text-white p-4 rounded-full inline-block mb-4 shadow-xl">
-                <Sprout size={48} />
+    <div className="relative flex flex-col items-center justify-center h-screen bg-[#f1f5f0] p-6 overflow-hidden">
+        {/* Decorative elements */}
+        <div className="absolute -top-24 -left-24 w-64 h-64 bg-emerald-100 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-pulse"></div>
+        <div className="absolute -bottom-24 -right-24 w-64 h-64 bg-amber-100 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-pulse delay-700"></div>
+
+        <div className="relative z-10 text-center space-y-2 mb-12 animate-slideUp">
+            <div className="inline-flex p-4 rounded-3xl glass-card mb-4 text-emerald-700">
+                <Leaf size={48} strokeWidth={1.5} />
             </div>
-            <h1 className="text-3xl font-bold text-green-900 tracking-tight">Sembradores ARBA</h1>
-            <p className="text-green-700 mt-2 font-medium">Gestión de siembra y regeneración</p>
+            <h1 className="text-4xl font-extrabold text-emerald-950 tracking-tight">
+                Sembrador <span className="text-emerald-600">ARBA</span>
+            </h1>
+            <p className="text-emerald-800/60 font-medium">Gestión inteligente de regeneración</p>
         </div>
 
-        <div className="w-full max-w-sm space-y-4">
+        <div className="relative z-10 w-full max-w-sm space-y-4 animate-slideUp [animation-delay:200ms]">
             <button
                 onClick={() => setRole('coordinator')}
-                className="w-full group relative flex items-center justify-center space-x-3 bg-green-700 hover:bg-green-800 text-white p-5 rounded-2xl shadow-lg transition-all transform hover:-translate-y-1 active:translate-y-0"
+                className="btn-premium w-full group flex items-center p-1 rounded-3xl bg-white border border-emerald-100 hover:border-emerald-500 transition-all hover:scale-[1.02]"
             >
-                <div className="absolute left-6 bg-green-800 p-2 rounded-lg group-hover:bg-green-600 transition-colors">
+                <div className="bg-emerald-600 text-white p-4 rounded-2xl group-hover:bg-emerald-700 transition-colors shadow-lg">
                     <ClipboardList size={24} />
                 </div>
-                <span className="text-lg font-bold pl-8">Soy Coordinador</span>
+                <div className="flex-1 text-left pl-4">
+                    <div className="text-emerald-950 font-bold text-lg">Soy Coordinador</div>
+                    <div className="text-emerald-800/50 text-xs font-semibold">Gestionar semillas y equipos</div>
+                </div>
+                <div className="pr-4 text-emerald-200 group-hover:text-emerald-500 transition-colors">
+                    <ArrowRight size={20} />
+                </div>
             </button>
 
             <button
                 onClick={() => setRole('sower')}
-                className="w-full group relative flex items-center justify-center space-x-3 bg-amber-600 hover:bg-amber-700 text-white p-5 rounded-2xl shadow-lg transition-all transform hover:-translate-y-1 active:translate-y-0"
+                className="btn-premium w-full group flex items-center p-1 rounded-3xl bg-white border border-amber-100 hover:border-amber-500 transition-all hover:scale-[1.02]"
             >
-                <div className="absolute left-6 bg-amber-700 p-2 rounded-lg group-hover:bg-amber-500 transition-colors">
+                <div className="bg-amber-600 text-white p-4 rounded-2xl group-hover:bg-amber-700 transition-colors shadow-lg">
                     <Users size={24} />
                 </div>
-                <span className="text-lg font-bold pl-8">Soy Sembrador</span>
+                <div className="flex-1 text-left pl-4">
+                    <div className="text-emerald-950 font-bold text-lg">Soy Sembrador</div>
+                    <div className="text-emerald-800/50 text-xs font-semibold">Registrar golpes en campo</div>
+                </div>
+                <div className="pr-4 text-emerald-100 group-hover:text-amber-500 transition-colors">
+                    <ArrowRight size={20} />
+                </div>
             </button>
         </div>
 
-        <div className="text-xs text-gray-400 mt-8 text-center max-w-xs">
-            v2.0 • Sincronización en la nube habilitada
+        <div className="absolute bottom-8 text-[10px] font-bold text-emerald-900/40 uppercase tracking-[0.2em]">
+            ARBA Elx • Edición Rediseño 2025
         </div>
     </div>
 );
@@ -133,96 +155,125 @@ const CoordinatorView = ({ seeds, groups }) => {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50 pb-20 font-sans">
-            <header className="bg-green-800 text-white p-4 shadow-lg sticky top-0 z-10 flex justify-between items-center">
-                <h2 className="text-lg font-bold flex items-center gap-2">
-                    <ClipboardList className="text-green-300" />
-                    Panel Coordinador
-                </h2>
-                <span className="text-xs bg-green-900 px-2 py-1 rounded text-green-100">En línea</span>
+        <div className="min-h-screen bg-[#f1f5f0] pb-24 font-sans">
+            <header className="glass-card sticky top-0 z-30 px-6 py-4 flex justify-between items-center border-b border-emerald-100/50">
+                <div className="flex items-center gap-3">
+                    <div className="bg-emerald-600 text-white p-2 rounded-xl shadow-md">
+                        <ClipboardList size={20} />
+                    </div>
+                    <div>
+                        <h2 className="text-emerald-950 font-bold leading-tight">Panel de Control</h2>
+                        <div className="flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                            <span className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-wider">Sistema Activo</span>
+                        </div>
+                    </div>
+                </div>
             </header>
 
-            <div className="p-4 max-w-lg mx-auto">
-                <div className="flex bg-white p-1 rounded-xl shadow-sm mb-6 border border-gray-100">
-                    {['seeds', 'groups', 'assign'].map(tab => (
+            <div className="p-4 max-w-2xl mx-auto space-y-6">
+                <div className="bg-emerald-900/5 p-1 rounded-2xl flex border border-emerald-900/5">
+                    {[
+                        { id: 'seeds', label: 'Inventario', icon: Leaf },
+                        { id: 'groups', label: 'Equipos', icon: Users },
+                        { id: 'assign', label: 'Logística', icon: MapPin }
+                    ].map(tab => (
                         <button
-                            key={tab}
-                            onClick={() => setActiveTab(tab)}
-                            className={`flex-1 py-2.5 rounded-lg font-semibold text-sm transition-all ${activeTab === tab
-                                    ? 'bg-green-100 text-green-800 shadow-sm'
-                                    : 'text-gray-500 hover:bg-gray-50'
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-all duration-300 ${activeTab === tab.id
+                                ? 'bg-white text-emerald-900 shadow-sm ring-1 ring-emerald-950/5'
+                                : 'text-emerald-900/40 hover:text-emerald-900/70 hover:bg-white/50'
                                 }`}
                         >
-                            {tab === 'seeds' ? 'Inventario' : tab === 'groups' ? 'Equipos' : 'Asignar'}
+                            <tab.icon size={16} />
+                            <span className="hidden xs:inline">{tab.label}</span>
                         </button>
                     ))}
                 </div>
 
                 {activeTab === 'seeds' && (
-                    <div className="space-y-6 animate-fadeIn">
-                        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-                            <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-                                <span className="bg-green-100 p-1.5 rounded-md text-green-700"><PlusCircle size={18} /></span>
+                    <div className="space-y-6 animate-slideUp">
+                        <section className="glass-card p-6 rounded-3xl shadow-sm border border-emerald-100/50">
+                            <h3 className="text-lg font-bold text-emerald-950 mb-5 flex items-center gap-2">
+                                <PlusCircle className="text-emerald-600" size={20} />
                                 Registrar Lote
                             </h3>
-                            <form onSubmit={handleAddSeed} className="space-y-3">
-                                <div>
-                                    <label className="text-xs font-bold text-gray-400 uppercase ml-1">Especie</label>
-                                    <input placeholder="Ej: Algarrobo" className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-green-500 outline-none transition-all" value={newSeed.species} onChange={e => setNewSeed({ ...newSeed, species: e.target.value })} />
+                            <form onSubmit={handleAddSeed} className="space-y-4">
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-widest px-1">Especie</label>
+                                    <input placeholder="Ej: Algarrobo" className="w-full p-4 bg-emerald-900/5 border border-transparent rounded-2xl focus:bg-white focus:border-emerald-500/50 focus:ring-4 focus:ring-emerald-500/5 outline-none transition-all font-medium" value={newSeed.species} onChange={e => setNewSeed({ ...newSeed, species: e.target.value })} />
                                 </div>
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div>
-                                        <label className="text-xs font-bold text-gray-400 uppercase ml-1">Origen</label>
-                                        <input placeholder="Ej: Elena" className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-green-500" value={newSeed.provider} onChange={e => setNewSeed({ ...newSeed, provider: e.target.value })} />
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-widest px-1">Origen</label>
+                                        <input placeholder="Ej: Elena" className="w-full p-4 bg-emerald-900/5 border border-transparent rounded-2xl focus:bg-white focus:border-emerald-500/50 outline-none transition-all font-medium" value={newSeed.provider} onChange={e => setNewSeed({ ...newSeed, provider: e.target.value })} />
                                     </div>
-                                    <div>
-                                        <label className="text-xs font-bold text-gray-400 uppercase ml-1">Tratamiento</label>
-                                        <input placeholder="Ej: Lijada" className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-green-500" value={newSeed.treatment} onChange={e => setNewSeed({ ...newSeed, treatment: e.target.value })} />
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-widest px-1">Tratamiento</label>
+                                        <input placeholder="Ej: Lijada" className="w-full p-4 bg-emerald-900/5 border border-transparent rounded-2xl focus:bg-white focus:border-emerald-500/50 outline-none transition-all font-medium" value={newSeed.treatment} onChange={e => setNewSeed({ ...newSeed, treatment: e.target.value })} />
                                     </div>
                                 </div>
-                                <button type="submit" className="w-full bg-green-700 hover:bg-green-800 text-white py-3 rounded-xl font-bold shadow-md active:scale-95 transition-all">
-                                    Guardar en Inventario
+                                <button type="submit" className="btn-premium w-full bg-emerald-700 hover:bg-emerald-800 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 mt-2">
+                                    <Save size={18} />
+                                    <span>Guardar en Inventario</span>
                                 </button>
                             </form>
-                        </div>
+                        </section>
 
                         <div className="space-y-3">
-                            <h3 className="font-bold text-gray-700 pl-1">Inventario Actual ({seeds.length})</h3>
-                            {seeds.map(seed => (
-                                <div key={seed.id} className="bg-white p-4 rounded-xl border-l-4 border-green-500 shadow-sm flex justify-between items-center">
-                                    <div>
-                                        <div className="font-bold text-gray-800">{seed.species}</div>
-                                        <div className="text-xs text-gray-500 font-medium flex gap-2 mt-1">
-                                            <span className="bg-gray-100 px-2 py-0.5 rounded text-gray-600">{seed.provider}</span>
-                                            <span className="bg-blue-50 text-blue-600 px-2 py-0.5 rounded">{seed.treatment}</span>
+                            <div className="flex justify-between items-center px-1">
+                                <h3 className="font-bold text-emerald-950/40 uppercase text-[10px] tracking-widest">Existencias ({seeds.length})</h3>
+                            </div>
+                            <div className="grid gap-3">
+                                {seeds.map(seed => (
+                                    <div key={seed.id} className="glass-card p-4 rounded-2xl border border-emerald-100/30 flex justify-between items-center group hover:border-emerald-500/30 transition-all">
+                                        <div>
+                                            <div className="font-bold text-emerald-950">{seed.species}</div>
+                                            <div className="flex gap-2 mt-1">
+                                                <span className="text-[10px] font-bold bg-emerald-100/50 text-emerald-800 px-2 py-0.5 rounded-full">{seed.provider}</span>
+                                                <span className="text-[10px] font-bold bg-amber-100/50 text-amber-800 px-2 py-0.5 rounded-full">{seed.treatment}</span>
+                                            </div>
                                         </div>
+                                        <Leaf size={16} className="text-emerald-100 group-hover:text-emerald-500 transition-colors" />
                                     </div>
-                                </div>
-                            ))}
-                            {seeds.length === 0 && <div className="text-center p-8 text-gray-400 border-2 border-dashed rounded-xl">No hay semillas registradas aún</div>}
+                                ))}
+                                {seeds.length === 0 && (
+                                    <div className="text-center p-12 glass-card rounded-3xl border-dashed border-2 border-emerald-100">
+                                        <Sprout className="mx-auto text-emerald-100 mb-2" size={32} />
+                                        <p className="text-emerald-900/30 font-medium text-sm">El inventario está vacío</p>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                 )}
 
                 {activeTab === 'groups' && (
-                    <div className="space-y-6 animate-fadeIn">
-                        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-                            <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-                                <span className="bg-amber-100 p-1.5 rounded-md text-amber-700"><Users size={18} /></span>
-                                Crear Equipo
+                    <div className="space-y-6 animate-slideUp">
+                        <section className="glass-card p-6 rounded-3xl shadow-sm border border-emerald-100/50">
+                            <h3 className="text-lg font-bold text-emerald-950 mb-5 flex items-center gap-2">
+                                <Users className="text-emerald-600" size={20} />
+                                Configurar Equipos
                             </h3>
-                            <form onSubmit={handleAddGroup} className="flex gap-2">
-                                <input placeholder="Ej: Pareja A (Ana y Luis)" className="flex-1 p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none" value={newGroup} onChange={e => setNewGroup(e.target.value)} />
-                                <button type="submit" className="bg-amber-600 hover:bg-amber-700 text-white px-6 rounded-xl font-bold shadow-md">Crear</button>
+                            <form onSubmit={handleAddGroup} className="flex gap-3">
+                                <input placeholder="Nombre del equipo..." className="flex-1 p-4 bg-emerald-900/5 border border-transparent rounded-2xl focus:bg-white focus:border-emerald-500/50 outline-none transition-all font-medium" value={newGroup} onChange={e => setNewGroup(e.target.value)} />
+                                <button type="submit" className="btn-premium bg-emerald-600 hover:bg-emerald-700 text-white px-6 rounded-2xl font-bold">Crear</button>
                             </form>
-                        </div>
-                        <div className="space-y-3">
+                        </section>
+                        <div className="grid gap-3">
                             {groups.map(group => (
-                                <div key={group.id} className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex justify-between items-center">
-                                    <span className="font-bold text-gray-800">{group.name}</span>
-                                    <span className={`text-xs px-3 py-1 rounded-full font-bold ${group.assignedSeeds?.length > 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'}`}>
-                                        {group.assignedSeeds?.length || 0} lotes
-                                    </span>
+                                <div key={group.id} className="glass-card p-5 rounded-2xl border border-emerald-100/30 flex justify-between items-center group">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600 font-bold group-hover:bg-emerald-600 group-hover:text-white transition-all">
+                                            {group.name.charAt(0)}
+                                        </div>
+                                        <span className="font-bold text-emerald-950">{group.name}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-900/5 text-[10px] font-bold text-emerald-800 uppercase tracking-tighter">
+                                        <Leaf size={10} />
+                                        <span>{group.assignedSeeds?.length || 0} lotes</span>
+                                    </div>
                                 </div>
                             ))}
                         </div>
@@ -230,50 +281,54 @@ const CoordinatorView = ({ seeds, groups }) => {
                 )}
 
                 {activeTab === 'assign' && (
-                    <div className="space-y-6 animate-fadeIn">
-                        <div className="bg-blue-50 p-3 rounded-lg flex gap-3 text-sm text-blue-800 mb-4">
-                            <Info className="shrink-0" size={20} />
-                            <p>Selecciona un equipo y añade las semillas que llevarán en su mochila.</p>
+                    <div className="space-y-6 animate-slideUp">
+                        <div className="bg-emerald-600/10 p-4 rounded-2xl flex gap-3 text-sm text-emerald-800 border border-emerald-600/10">
+                            <Info className="shrink-0 text-emerald-600" size={20} />
+                            <p className="leading-tight font-medium">Gestiona la carga de cada equipo. Selecciona qué lotes de semillas llevarán en su mochila.</p>
                         </div>
                         {groups.map(group => (
-                            <div key={group.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200">
-                                <h3 className="font-bold text-lg text-gray-800 border-b border-gray-100 pb-3 mb-3 flex justify-between items-center">
+                            <div key={group.id} className="glass-card p-6 rounded-3xl border border-emerald-100/30">
+                                <h3 className="font-bold text-lg text-emerald-950 pb-4 mb-5 border-b border-emerald-100/50 flex justify-between items-center">
                                     {group.name}
-                                    <Users size={16} className="text-gray-400" />
+                                    <Users size={18} className="text-emerald-100" />
                                 </h3>
 
-                                <div className="mb-4">
+                                <div className="mb-6">
                                     <div className="flex flex-wrap gap-2">
                                         {group.assignedSeeds && group.assignedSeeds.length > 0 ? (
                                             group.assignedSeeds.map(sid => {
                                                 const seed = seeds.find(s => s.id === sid);
                                                 return seed ? (
-                                                    <span key={sid} className="bg-green-50 text-green-800 text-xs font-bold px-2 py-1 rounded border border-green-100 flex items-center gap-1">
-                                                        <Leaf size={10} /> {seed.species} ({seed.provider})
+                                                    <span key={sid} className="bg-emerald-50 text-emerald-800 text-[10px] font-bold px-3 py-1.5 rounded-full border border-emerald-100 flex items-center gap-1.5 transition-all hover:bg-emerald-100">
+                                                        <Leaf size={10} className="text-emerald-600" /> {seed.species}
                                                     </span>
                                                 ) : null;
                                             })
-                                        ) : <span className="text-gray-400 text-sm italic">Mochila vacía</span>}
+                                        ) : (
+                                            <div className="w-full py-4 text-center border-2 border-dashed border-emerald-50 rounded-2xl">
+                                                <p className="text-emerald-800/30 text-xs italic font-semibold">Mochila vacía</p>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 
-                                <div className="relative">
+                                <div className="relative group">
                                     <select
-                                        className="w-full p-3 border border-gray-200 rounded-xl bg-gray-50 text-sm appearance-none cursor-pointer hover:border-green-400 transition-colors"
+                                        className="w-full p-4 pl-5 border border-transparent rounded-2xl bg-emerald-900/5 text-sm font-bold text-emerald-900 appearance-none cursor-pointer hover:bg-emerald-100/50 hover:border-emerald-200 transition-all outline-none focus:ring-4 focus:ring-emerald-500/5"
                                         onChange={(e) => {
                                             if (e.target.value) assignSeedToGroup(group.id, e.target.value);
                                             e.target.value = "";
                                         }}
                                     >
-                                        <option value="">+ Añadir semilla a la mochila...</option>
+                                        <option value="">+ Añadir semillas a mochila</option>
                                         {seeds.map(seed => (
                                             <option key={seed.id} value={seed.id}>
-                                                {seed.species} - {seed.provider} ({seed.treatment})
+                                                {seed.species} ({seed.provider})
                                             </option>
                                         ))}
                                     </select>
-                                    <div className="absolute right-3 top-3.5 pointer-events-none text-gray-500">
-                                        <PlusCircle size={16} />
+                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-400 group-hover:text-emerald-600 transition-colors">
+                                        <PlusCircle size={20} />
                                     </div>
                                 </div>
                             </div>
@@ -380,31 +435,47 @@ const SowerView = ({ seeds, groups, userId }) => {
 
     if (!selectedGroupId) {
         return (
-            <div className="min-h-screen bg-green-50 p-6 flex flex-col justify-center">
-                <h2 className="text-2xl font-bold text-green-900 mb-2 text-center">Identifícate</h2>
-                <p className="text-center text-green-700 mb-8 text-sm">Selecciona tu equipo para cargar la mochila digital</p>
-                <div className="grid gap-4 max-w-md mx-auto w-full">
-                    {groups.map(group => (
+            <div className="min-h-screen bg-[#f1f5f0] p-6 flex flex-col justify-center overflow-hidden relative">
+                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-400 via-emerald-500 to-emerald-700"></div>
+
+                <div className="text-center mb-10 animate-slideUp">
+                    <div className="inline-flex p-3 rounded-2xl bg-emerald-600 text-white shadow-xl mb-4">
+                        <Users size={32} />
+                    </div>
+                    <h2 className="text-3xl font-extrabold text-emerald-950 mb-2">Identifícate</h2>
+                    <p className="text-emerald-800/50 font-medium">Selecciona tu equipo para cargar la mochila digital</p>
+                </div>
+
+                <div className="grid gap-4 max-w-md mx-auto w-full animate-slideUp [animation-delay:200ms]">
+                    {groups.map((group, idx) => (
                         <button
                             key={group.id}
                             onClick={() => setSelectedGroupId(group.id)}
-                            className="bg-white p-6 rounded-2xl shadow-sm border-2 border-green-100 hover:border-green-500 hover:shadow-md transition-all text-left group"
+                            className="btn-premium group relative bg-white border border-emerald-100 p-6 rounded-3xl flex items-center gap-4 hover:shadow-2xl hover:border-emerald-500 transition-all active:scale-[0.98]"
+                            style={{ animationDelay: `${idx * 100}ms` }}
                         >
-                            <div className="flex justify-between items-center">
-                                <span className="font-bold text-xl text-green-900 group-hover:text-green-700">{group.name}</span>
-                                <Users className="text-green-200 group-hover:text-green-500 transition-colors" />
+                            <div className="w-14 h-14 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-all shadow-inner">
+                                <Users size={24} />
                             </div>
-                            <div className="text-gray-500 text-sm mt-2 flex items-center gap-2">
-                                <Leaf size={14} /> {group.assignedSeeds?.length || 0} tipos de semillas
+                            <div className="flex-1 text-left">
+                                <div className="text-xl font-extrabold text-emerald-950 group-hover:text-emerald-700 transition-colors">{group.name}</div>
+                                <div className="text-emerald-800/40 text-xs font-bold uppercase tracking-widest mt-0.5 flex items-center gap-1.5">
+                                    <Leaf size={12} className="text-emerald-400" />
+                                    {group.assignedSeeds?.length || 0} Variedades en mochila
+                                </div>
                             </div>
+                            <ArrowRight className="text-emerald-100 group-hover:text-emerald-500 transition-colors" size={24} />
                         </button>
                     ))}
                 </div>
+
                 {groups.length === 0 && (
-                    <div className="text-center bg-white p-6 rounded-xl shadow mt-4">
-                        <AlertTriangle className="mx-auto text-amber-500 mb-2" />
-                        <p className="text-gray-600">No hay equipos activos.</p>
-                        <p className="text-xs text-gray-400 mt-1">El coordinador debe crearlos primero.</p>
+                    <div className="text-center glass-card p-10 rounded-3xl max-w-sm mx-auto animate-slideUp border-dashed border-2 border-emerald-100">
+                        <div className="bg-amber-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <AlertTriangle className="text-amber-500" size={32} />
+                        </div>
+                        <p className="text-emerald-950 font-bold mb-1">Sin misiones activas</p>
+                        <p className="text-emerald-800/40 text-xs font-medium">El coordinador debe configurar los equipos primero.</p>
                     </div>
                 )}
             </div>
@@ -412,215 +483,225 @@ const SowerView = ({ seeds, groups, userId }) => {
     }
 
     return (
-        <div className="min-h-screen bg-gray-100 pb-24 font-sans">
-            <div className="bg-amber-600 text-white px-4 py-3 sticky top-0 z-20 shadow-lg flex justify-between items-end">
+        <div className="min-h-screen bg-[#f1f5f0] pb-28 font-sans">
+            <header className="glass-card sticky top-0 z-30 px-6 py-4 flex justify-between items-end border-b border-amber-100/50">
                 <div>
-                    <h2 className="font-bold text-lg leading-none">{selectedGroup.name}</h2>
-                    <p className="text-amber-200 text-xs font-mono mt-1 opacity-80 uppercase tracking-widest">Sembrando</p>
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
+                        <span className="text-[10px] font-bold text-amber-900/40 uppercase tracking-widest">Misión en curso</span>
+                    </div>
+                    <h2 className="text-xl font-extrabold text-emerald-950 leading-none">{selectedGroup.name}</h2>
                 </div>
-                <div className="bg-amber-700/50 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-amber-500/30 text-center min-w-[60px]">
-                    <div className="text-xs text-amber-200 uppercase text-[10px]">Hoyos</div>
-                    <div className="font-mono font-bold text-lg leading-none">{myLogs.length}</div>
+                <div className="bg-emerald-950 text-white px-4 py-2 rounded-2xl shadow-lg border border-emerald-800 flex flex-col items-center min-w-[70px]">
+                    <span className="text-[9px] font-bold uppercase tracking-tighter text-emerald-400">Hoyos</span>
+                    <span className="text-xl font-black leading-none">{myLogs.length}</span>
                 </div>
-            </div>
+            </header>
 
-            <div className="flex bg-white shadow-sm mb-4 border-b border-gray-200">
-                <button
-                    onClick={() => setView('form')}
-                    className={`flex-1 py-4 text-xs font-bold uppercase tracking-wide border-b-2 transition-colors ${view === 'form' ? 'border-amber-600 text-amber-600 bg-amber-50/50' : 'border-transparent text-gray-400 hover:bg-gray-50'}`}
-                >
-                    Nueva Siembra
-                </button>
-                <button
-                    onClick={() => setView('history')}
-                    className={`flex-1 py-4 text-xs font-bold uppercase tracking-wide border-b-2 transition-colors ${view === 'history' ? 'border-amber-600 text-amber-600 bg-amber-50/50' : 'border-transparent text-gray-400 hover:bg-gray-50'}`}
-                >
-                    Historial
-                </button>
+            {/* Bottom Navigation */}
+            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 w-[90%] max-w-sm">
+                <div className="glass-card p-1.5 rounded-[2.5rem] flex items-center shadow-2xl border border-emerald-100/30">
+                    <button
+                        onClick={() => setView('form')}
+                        className={`flex-1 flex flex-col items-center gap-1 py-3 rounded-[2rem] transition-all duration-300 ${view === 'form' ? 'bg-emerald-600 text-white shadow-lg' : 'text-emerald-900/40 hover:text-emerald-900/60'}`}
+                    >
+                        <PlusCircle size={20} />
+                        <span className="text-[10px] font-bold uppercase">Siembra</span>
+                    </button>
+                    <button
+                        onClick={() => setView('history')}
+                        className={`flex-1 flex flex-col items-center gap-1 py-3 rounded-[2rem] transition-all duration-300 ${view === 'history' ? 'bg-emerald-600 text-white shadow-lg' : 'text-emerald-900/40 hover:text-emerald-900/60'}`}
+                    >
+                        <History size={20} />
+                        <span className="text-[10px] font-bold uppercase">Cuaderno</span>
+                    </button>
+                </div>
             </div>
 
             {view === 'form' && (
-                <div className="px-4 space-y-6 max-w-md mx-auto">
+                <div className="px-5 space-y-8 animate-slideUp pb-12">
                     {/* SELECCIÓN SEMILLA */}
-                    <section>
-                        <div className="flex justify-between items-baseline mb-2">
-                            <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">1. ¿Qué siembras?</label>
-                            {formData.seedId && <span className="text-xs text-green-600 font-bold bg-green-100 px-2 rounded-full">Seleccionada</span>}
-                        </div>
-
-                        <div className="grid grid-cols-1 gap-2">
+                    <section className="mt-4">
+                        <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-[0.2em] block mb-3 px-1">1. ¿Qué estás sembrando?</label>
+                        <div className="grid gap-3">
                             {mySeeds.map(seed => (
                                 <button
                                     key={seed.id}
                                     onClick={() => setFormData({ ...formData, seedId: seed.id })}
-                                    className={`p-4 rounded-xl border-2 text-left transition-all relative overflow-hidden ${formData.seedId === seed.id
-                                            ? 'border-green-600 bg-green-50 shadow-md ring-1 ring-green-600'
-                                            : 'border-white bg-white shadow-sm hover:border-green-200'
+                                    className={`btn-premium group flex items-center p-4 rounded-3xl border-2 transition-all relative overflow-hidden ${formData.seedId === seed.id
+                                        ? 'bg-emerald-600 border-emerald-600 text-white shadow-emerald-200'
+                                        : 'bg-white border-emerald-100/50 text-emerald-950 hover:border-emerald-300'
                                         }`}
                                 >
-                                    <div className="relative z-10">
-                                        <div className={`font-bold text-lg ${formData.seedId === seed.id ? 'text-green-900' : 'text-gray-700'}`}>{seed.species}</div>
-                                        <div className="text-xs text-gray-500 flex items-center gap-2 mt-1">
-                                            <span className="bg-gray-100 px-1.5 rounded">{seed.provider}</span>
-                                            <span>•</span>
-                                            <span className="italic">{seed.treatment}</span>
+                                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${formData.seedId === seed.id ? 'bg-emerald-500/50' : 'bg-emerald-50 text-emerald-600'}`}>
+                                        <Leaf size={24} />
+                                    </div>
+                                    <div className="flex-1 text-left pl-4 relative z-10">
+                                        <div className="font-extrabold text-lg leading-tight uppercase tracking-tight">{seed.species}</div>
+                                        <div className={`text-[10px] font-bold uppercase tracking-widest mt-0.5 ${formData.seedId === seed.id ? 'text-emerald-200' : 'text-emerald-800/30'}`}>
+                                            {seed.provider} • {seed.treatment}
                                         </div>
                                     </div>
                                     {formData.seedId === seed.id && (
-                                        <div className="absolute right-0 bottom-0 text-green-200 opacity-20 -mb-4 -mr-4">
-                                            <Leaf size={80} />
+                                        <div className="bg-white/20 p-1 rounded-full flex items-center justify-center">
+                                            <Check size={16} />
                                         </div>
                                     )}
                                 </button>
                             ))}
                             {mySeeds.length === 0 && (
-                                <div className="bg-red-50 p-4 rounded-xl border border-red-100 text-red-800 text-sm flex gap-2 items-center">
-                                    <AlertTriangle size={20} />
-                                    Tu mochila está vacía. Pide al coordinador que te asigne semillas.
+                                <div className="glass-card p-6 rounded-3xl border-dashed border-2 border-red-100 flex flex-col items-center gap-2 text-center">
+                                    <AlertTriangle className="text-red-400" size={32} />
+                                    <p className="text-red-900 font-bold text-sm">Tu mochila está vacía</p>
+                                    <p className="text-red-800/40 text-xs font-medium">No tienes semillas asignadas por el coordinador.</p>
                                 </div>
                             )}
                         </div>
                     </section>
 
                     {/* DATOS GOLPE */}
-                    <section className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-5">
-                        <div>
-                            <label className="text-xs font-bold text-gray-400 uppercase block mb-2">2. Micrositio</label>
-                            <div className="flex p-1 bg-gray-100 rounded-lg">
-                                {['Nodriza Viva', 'Nodriza Muerta', 'Alcorque'].map(m => (
-                                    <button
-                                        key={m}
-                                        onClick={() => setFormData({ ...formData, microsite: m })}
-                                        className={`flex-1 py-2 text-xs font-bold rounded-md transition-all ${formData.microsite === m
-                                                ? 'bg-white text-blue-700 shadow-sm'
-                                                : 'text-gray-500 hover:text-gray-700'
-                                            }`}
-                                    >
-                                        {m.replace('Nodriza', 'N.')}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-
-                        {(formData.microsite !== 'Nodriza Muerta') && (
-                            <div className="animate-fadeIn">
-                                <label className="text-xs font-bold text-gray-400 uppercase block mb-2">Orientación</label>
-                                <div className="grid grid-cols-4 gap-2">
-                                    {['Norte', 'Este', 'Sur', 'Oeste'].map(o => (
+                    <div className="space-y-6">
+                        <section className="glass-card p-6 rounded-3xl shadow-sm border border-emerald-100/30 space-y-6">
+                            <div>
+                                <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-[0.2em] block mb-4">2. Micrositio</label>
+                                <div className="flex p-1.5 bg-emerald-900/5 rounded-2xl">
+                                    {['Nodriza Viva', 'Nodriza Muerta', 'Alcorque'].map(m => (
                                         <button
-                                            key={o}
-                                            onClick={() => setFormData({ ...formData, orientation: o })}
-                                            className={`py-2 rounded-lg text-xs font-bold border-2 transition-all ${formData.orientation === o
-                                                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                                                    : 'border-transparent bg-gray-50 text-gray-500'
+                                            key={m}
+                                            onClick={() => setFormData({ ...formData, microsite: m })}
+                                            className={`flex-1 py-3 text-[10px] font-black uppercase tracking-tighter rounded-xl transition-all ${formData.microsite === m
+                                                ? 'bg-white text-emerald-900 shadow-sm'
+                                                : 'text-emerald-900/40'
                                                 }`}
                                         >
-                                            {o.charAt(0)}
+                                            {m}
                                         </button>
                                     ))}
                                 </div>
                             </div>
-                        )}
 
-                        <div className="flex gap-4">
-                            <div className="flex-1">
-                                <label className="text-xs font-bold text-gray-400 uppercase block mb-2">3. Método</label>
-                                <select
-                                    className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-medium focus:border-amber-500 outline-none"
-                                    value={formData.method}
-                                    onChange={e => setFormData({ ...formData, method: e.target.value })}
-                                >
-                                    <option>Con Sustrato</option>
-                                    <option>Sin Sustrato</option>
-                                    <option>Semilla Seca</option>
-                                </select>
-                            </div>
-                            <div className="w-24">
-                                <label className="text-xs font-bold text-gray-400 uppercase block mb-2 text-center">Cantidad</label>
-                                <div className="flex items-center border border-gray-200 rounded-lg bg-gray-50">
-                                    <input
-                                        type="number"
-                                        className="w-full p-2.5 bg-transparent text-center font-bold text-lg outline-none"
-                                        value={formData.quantity}
-                                        onChange={e => setFormData({ ...formData, quantity: e.target.value })}
-                                    />
+                            {(formData.microsite !== 'Nodriza Muerta') && (
+                                <div className="animate-slideUp">
+                                    <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-[0.2em] block mb-4">Orientación</label>
+                                    <div className="grid grid-cols-4 gap-3">
+                                        {['Norte', 'Este', 'Sur', 'Oeste'].map(o => (
+                                            <button
+                                                key={o}
+                                                onClick={() => setFormData({ ...formData, orientation: o })}
+                                                className={`py-4 rounded-2xl text-xs font-black uppercase border-2 transition-all flex flex-col items-center gap-1 ${formData.orientation === o
+                                                    ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg'
+                                                    : 'bg-emerald-900/5 border-transparent text-emerald-900/40'
+                                                    }`}
+                                            >
+                                                <Compass size={14} className={formData.orientation === o ? 'text-white' : 'text-emerald-200'} />
+                                                {o.charAt(0)}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            <div>
+                                <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-[0.2em] block mb-4">Detalles finales</label>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <button
+                                        onClick={() => setFormData({ ...formData, method: formData.method === 'Protector' ? 'Directo' : 'Protector' })}
+                                        className={`p-4 rounded-2xl border-2 transition-all flex items-center justify-center gap-2 font-bold text-xs ${formData.method === 'Protector'
+                                            ? 'bg-blue-600 border-blue-600 text-white shadow-lg'
+                                            : 'bg-white border-emerald-100 text-emerald-900/40'
+                                            }`}
+                                    >
+                                        <Shield size={16} />
+                                        {formData.method === 'Protector' ? 'Protector ON' : 'Sin Protector'}
+                                    </button>
+                                    <div className="flex bg-emerald-900/5 rounded-2xl p-1 gap-1">
+                                        {[1, 2, 3].map(n => (
+                                            <button
+                                                key={n}
+                                                onClick={() => setFormData({ ...formData, quantity: n })}
+                                                className={`flex-1 py-3 text-xs font-black rounded-xl transition-all ${formData.quantity === n
+                                                    ? 'bg-emerald-950 text-white shadow-sm'
+                                                    : 'text-emerald-950/20 hover:text-emerald-950/40'
+                                                    }`}
+                                            >
+                                                {n}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
 
-                        <div>
-                            <input
-                                placeholder="Nota (ej: suelo rocoso)..."
-                                className="w-full p-3 bg-gray-50 rounded-lg text-sm border-transparent focus:bg-white focus:border-amber-300 border transition-all outline-none"
+                            <textarea
+                                placeholder="Notas del terreno (opcional)..."
+                                className="w-full p-4 bg-emerald-900/5 border border-transparent rounded-2xl focus:bg-white focus:border-emerald-500/50 outline-none transition-all font-medium text-sm min-h-[80px]"
                                 value={formData.notes}
                                 onChange={e => setFormData({ ...formData, notes: e.target.value })}
                             />
-                        </div>
-                    </section>
+                        </section>
 
-                    <button
-                        onClick={handleSow}
-                        disabled={isSubmitting || !formData.seedId}
-                        className={`w-full py-4 rounded-2xl text-lg font-bold text-white shadow-xl transform active:scale-95 transition-all flex items-center justify-center space-x-3 overflow-hidden relative ${isSubmitting || !formData.seedId
-                                ? 'bg-gray-300 cursor-not-allowed'
-                                : 'bg-gradient-to-r from-green-600 to-green-700 hover:from-green-500 hover:to-green-600'
-                            }`}
-                    >
-                        {isSubmitting ? (
-                            <div className="flex items-center gap-2">
-                                {gpsStatus === 'searching' && <MapPin className="animate-bounce" size={20} />}
-                                <span>Guardando...</span>
-                            </div>
-                        ) : (
-                            <>
-                                <div className="bg-white/20 p-1.5 rounded-full"><PlusCircle size={20} /></div>
-                                <span>REGISTRAR GOLPE</span>
-                            </>
-                        )}
+                        <button
+                            disabled={!formData.seedId || isSubmitting}
+                            onClick={handleSow}
+                            className={`btn-premium w-full py-6 rounded-3xl font-black text-lg uppercase tracking-widest flex items-center justify-center gap-3 shadow-2xl transition-all active:scale-[0.95] ${formData.seedId ? 'bg-emerald-600 text-white' : 'bg-emerald-100 text-emerald-200'}`}
+                        >
+                            {isSubmitting ? (
+                                <span className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></span>
+                            ) : (
+                                <>
+                                    <MapPin size={24} className={gpsStatus === 'success' ? 'text-emerald-300' : 'text-white/50'} />
+                                    <span>Registrar Golpe</span>
+                                </>
+                            )}
+                        </button>
+                    </div>
 
-                        {/* Success indicator overlay */}
-                        {gpsStatus === 'success' && (
-                            <div className="absolute inset-0 bg-green-500 flex items-center justify-center animate-fadeIn">
-                                <CheckCircle className="mr-2" /> ¡Guardado con GPS!
-                            </div>
-                        )}
-                    </button>
-
-                    {!formData.seedId && <p className="text-center text-xs text-amber-600 font-medium bg-amber-50 py-2 rounded-lg">👆 Selecciona una semilla arriba para empezar</p>}
+                    {!formData.seedId && <p className="text-center text-[10px] text-amber-600 font-black uppercase tracking-widest animate-pulse">👆 Selecciona una semilla para activar</p>}
                 </div>
             )}
 
             {view === 'history' && (
-                <div className="px-4 space-y-3 pb-8">
+                <div className="px-5 space-y-4 animate-slideUp pb-12">
                     {myLogs.length === 0 && (
-                        <div className="text-center py-12 opacity-50">
-                            <History className="mx-auto mb-2" size={32} />
-                            <p>Tu cuaderno de campo está vacío.</p>
+                        <div className="text-center py-20 glass-card rounded-[2.5rem] border-dashed border-2 border-emerald-100 flex flex-col items-center gap-3">
+                            <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center text-emerald-200">
+                                <History size={32} />
+                            </div>
+                            <div>
+                                <p className="text-emerald-950 font-bold">Tu cuaderno está vacío</p>
+                                <p className="text-emerald-800/40 text-xs font-medium">Registra tu primera siembra hoy.</p>
+                            </div>
                         </div>
                     )}
-                    {myLogs.map(log => (
-                        <div key={log.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex gap-4 items-start">
-                            <div className="bg-amber-100 text-amber-700 font-bold text-xl w-12 h-12 flex items-center justify-center rounded-lg shrink-0">
-                                {log.quantity}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <div className="font-bold text-gray-800 truncate">{log.seedName}</div>
-                                <div className="text-sm text-gray-500 mt-0.5 flex flex-wrap gap-2">
-                                    <span className="bg-blue-50 text-blue-700 px-1.5 rounded text-xs border border-blue-100">
-                                        {log.microsite} {log.orientation && `• ${log.orientation}`}
-                                    </span>
-                                    <span className="text-xs text-gray-400 flex items-center">
-                                        <MapPin size={10} className="mr-0.5" />
-                                        {log.location?.acc ? `±${Math.round(log.location.acc)}m` : 'Sin GPS'}
-                                    </span>
+                    <div className="grid gap-3">
+                        {myLogs.map(log => (
+                            <div key={log.id} className="glass-card p-5 rounded-3xl border border-emerald-100/30 flex gap-4 items-center group transition-all hover:bg-white shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
+                                <div className="w-12 h-12 bg-emerald-900/5 rounded-2xl flex flex-col items-center justify-center text-emerald-900/30 group-hover:bg-emerald-600 group-hover:text-white transition-all">
+                                    <MapPin size={18} />
+                                    <span className="text-[8px] font-black uppercase tracking-tighter mt-0.5">{log.timestamp ? new Date(log.timestamp.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}</span>
                                 </div>
-                                {log.notes && <div className="text-xs text-gray-400 italic mt-1">"{log.notes}"</div>}
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-0.5">
+                                        <h4 className="font-extrabold text-emerald-950 truncate uppercase tracking-tight leading-none">{log.seedName}</h4>
+                                        <span className="shrink-0 text-[8px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full uppercase tracking-widest leading-none">{log.microsite.replace('Nodriza', 'N.')}</span>
+                                    </div>
+                                    <div className="text-[9px] font-bold text-emerald-800/40 uppercase tracking-widest flex items-center gap-2 mt-1">
+                                        <span className="flex items-center gap-1"><IterationCcw size={10} /> {log.quantity}</span>
+                                        <span>•</span>
+                                        <span className="text-amber-600/60 font-black">{log.orientation || 'CENTRO'}</span>
+                                        {log.location?.acc && (
+                                            <>
+                                                <span>•</span>
+                                                <span className="text-emerald-500/50 flex items-center gap-0.5">GPS <Check size={8} /></span>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="bg-emerald-50 w-8 h-8 rounded-full flex items-center justify-center text-emerald-200 group-hover:bg-emerald-600 group-hover:text-white transition-all">
+                                    <ChevronRight size={16} />
+                                </div>
                             </div>
-                            <div className="text-xs font-mono text-gray-400 pt-1">
-                                {log.timestamp ? new Date(log.timestamp.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
-                            </div>
-                        </div>
-                    ))}
+                        ))}
+                    </div>
                 </div>
             )}
         </div>

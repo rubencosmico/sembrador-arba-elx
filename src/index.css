@@ -1,11 +1,73 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@100;300;400;500;600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@keyframes fadeIn {
+:root {
+    --forest-dark: #064e3b;
+    --forest-main: #059669;
+    --forest-light: #d1fae5;
+    --earth-warm: #78350f;
+    --stone-soft: #f1f5f9;
+}
+
+@layer base {
+    body {
+        @apply bg-[#f1f5f0] text-emerald-950 antialiased selection:bg-emerald-100 selection:text-emerald-900;
+        font-family: 'Outfit', sans-serif;
+    }
+}
+
+@layer components {
+    .glass-card {
+        @apply bg-white/70 backdrop-blur-xl border border-white/40 shadow-glass;
+    }
+
+    .btn-premium {
+        @apply relative overflow-hidden transition-all duration-300 active:scale-[0.97] hover:shadow-xl;
+    }
+
+    .btn-premium::after {
+        content: '';
+        @apply absolute inset-0 bg-white/5 opacity-0 transition-opacity duration-300;
+    }
+
+    .btn-premium:hover::after {
+        @apply opacity-100;
+    }
+}
+
+@layer utilities {
+    .animate-slideUp {
+        animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    .animate-pulse-subtle {
+        animation: pulseSubtle 3s ease-in-out infinite;
+    }
+
+    .delay-100 {
+        animation-delay: 100ms;
+    }
+
+    .delay-200 {
+        animation-delay: 200ms;
+    }
+
+    .delay-300 {
+        animation-delay: 300ms;
+    }
+
+    .delay-400 {
+        animation-delay: 400ms;
+    }
+}
+
+@keyframes slideUp {
     from {
         opacity: 0;
-        transform: translateY(10px);
+        transform: translateY(20px);
     }
 
     to {
@@ -14,6 +76,29 @@
     }
 }
 
-.animate-fadeIn {
-    animation: fadeIn 0.3s ease-out forwards;
+@keyframes pulseSubtle {
+
+    0%,
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.8;
+        transform: scale(0.98);
+    }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+    width: 6px;
+}
+
+::-webkit-scrollbar-track {
+    @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    @apply bg-emerald-100 rounded-full hover:bg-emerald-200 transition-colors;
 }
