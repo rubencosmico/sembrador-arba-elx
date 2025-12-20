@@ -80,8 +80,18 @@ function App() {
         // Let's optimize: fetch only if role === 'coordinator'.
         let unsubLogs = () => { };
         if (role === 'coordinator') {
-            const qLogs = query(collection(db, ...dataPath, 'logs'), where('campaignId', '==', campaign.id), orderBy('timestamp', 'desc'));
-            unsubLogs = onSnapshot(qLogs, s => setLogs(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+            // Removing orderBy from server query to avoid requiring a composite index immediately.
+            // Sorting client-side instead.
+            const qLogs = query(collection(db, ...dataPath, 'logs'), where('campaignId', '==', campaign.id));
+            unsubLogs = onSnapshot(qLogs, (s) => {
+                const fetchedLogs = s.docs.map(d => ({ id: d.id, ...d.data() }));
+                // Sort by timestamp desc
+                fetchedLogs.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
+                setLogs(fetchedLogs);
+            }, (error) => {
+                console.error("Error fetching logs:", error);
+                alert("Error cargando datos. Revisa la consola.");
+            });
         }
 
         return () => {
