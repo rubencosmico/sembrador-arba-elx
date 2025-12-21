@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { addDoc, collection, serverTimestamp, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { addDoc, collection, serverTimestamp, query, orderBy, onSnapshot, where, getDocs, limit } from 'firebase/firestore';
 import {
     Users, LogOut, ArrowRight, AlertTriangle, PlusCircle, History,
     Leaf, Check, Compass, Shield, MapPin, Camera, X, Save
@@ -20,23 +20,41 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, onResetRole }
     });
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [myLogs, setMyLogs] = useState([]);
+    const [loadingLogs, setLoadingLogs] = useState(false);
     const [gpsStatus, setGpsStatus] = useState('waiting');
     const [currentLocation, setCurrentLocation] = useState({ lat: null, lng: null, acc: null });
 
     useEffect(() => {
-        if (!userId || !selectedGroupId || !campaignId) return;
-        const q = query(
-            collection(db, 'artifacts', appId, 'public', 'data', 'logs')
-        );
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const logs = snapshot.docs
-                .map(doc => ({ id: doc.id, ...doc.data() }))
-                .filter(log => log.campaignId === campaignId && (log.groupId === selectedGroupId || !log.groupId))
-                .sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0)); // Client-side sort
-            setMyLogs(logs);
-        });
-        return () => unsubscribe();
-    }, [userId, selectedGroupId, campaignId]);
+        if (!selectedGroupId || !campaignId) return;
+
+        const fetchLogs = async () => {
+            setLoadingLogs(true);
+            try {
+                const logsRef = collection(db, 'artifacts', appId, 'public', 'data', 'logs');
+                const q = query(
+                    logsRef,
+                    where('campaignId', '==', campaignId),
+                    orderBy('timestamp', 'desc'),
+                    limit(100)
+                );
+
+                const snapshot = await getDocs(q);
+                const campaignLogs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                // Filtrar por groupId en cliente (incluir logs sin groupId para datos migrados)
+                const logs = campaignLogs
+                    .filter(log => log.groupId === selectedGroupId || !log.groupId);
+
+                setMyLogs(logs);
+            } catch (error) {
+                console.error('Error fetching logs:', error);
+            } finally {
+                setLoadingLogs(false);
+            }
+        };
+
+        fetchLogs();
+    }, [selectedGroupId, campaignId]);
 
     const captureGPS = async () => {
         if (!("geolocation" in navigator)) return;
@@ -310,18 +328,30 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, onResetRole }
             {view === 'history' && (
                 <div className="px-5 space-y-4 animate-slideUp pb-12 pt-4">
                     <h3 className="text-lg font-bold text-emerald-950">Historial reciente</h3>
-                    {myLogs.map(log => (
-                        <div key={log.id} className="glass-card p-4 rounded-2xl border border-emerald-100/30 flex justify-between items-center">
-                            <div>
-                                <div className="font-bold text-emerald-950 text-sm">{log.seedName}</div>
-                                <div className="text-xs text-emerald-800/50">{log.microsite}</div>
-                            </div>
-                            <div className="text-right">
-                                <div className="font-black text-emerald-700 text-lg">{log.holeCount || 1}</div>
-                                <div className="text-[9px] font-bold text-emerald-800/30 uppercase">Golpes</div>
-                            </div>
+                    {loadingLogs ? (
+                        <div className="flex flex-col items-center justify-center py-12 gap-3">
+                            <div className="w-8 h-8 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin"></div>
+                            <p className="text-sm text-emerald-800/60 font-medium">Cargando registros...</p>
                         </div>
-                    ))}
+                    ) : myLogs.length === 0 ? (
+                        <div className="text-center py-12 text-emerald-800/40">
+                            <History size={32} className="mx-auto mb-2 opacity-50" />
+                            <p className="text-sm font-medium">Sin registros todavía</p>
+                        </div>
+                    ) : (
+                        myLogs.map(log => (
+                            <div key={log.id} className="glass-card p-4 rounded-2xl border border-emerald-100/30 flex justify-between items-center">
+                                <div>
+                                    <div className="font-bold text-emerald-950 text-sm">{log.seedName}</div>
+                                    <div className="text-xs text-emerald-800/50">{log.microsite}</div>
+                                </div>
+                                <div className="text-right">
+                                    <div className="font-black text-emerald-700 text-lg">{log.holeCount || 1}</div>
+                                    <div className="text-[9px] font-bold text-emerald-800/30 uppercase">Golpes</div>
+                                </div>
+                            </div>
+                        ))
+                    )}
                 </div>
             )}
         </div>
