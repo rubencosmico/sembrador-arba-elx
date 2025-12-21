@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { addDoc, collection, serverTimestamp, query, orderBy, onSnapshot } from 'firebase/firestore';
 import {
     Users, LogOut, ArrowRight, AlertTriangle, PlusCircle, History,
-    Leaf, Check, Compass, Shield, MapPin, Camera, X
+    Leaf, Check, Compass, Shield, MapPin, Camera, X, Save
 } from 'lucide-react';
 
 const SowerView = ({ db, appId, campaignId, seeds, groups, userId, onResetRole }) => {
