@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { addDoc, collection, serverTimestamp, query, orderBy, where, getDocs, limit } from 'firebase/firestore';
+import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import {
     Users, LogOut, ArrowRight, AlertTriangle, PlusCircle, History,
     Leaf, Check, Compass, Shield, MapPin, Camera, X, Save,
     Search, ChevronDown, ChevronUp
 } from 'lucide-react';
 
-const SowerView = ({ db, appId, campaignId, seeds, groups, userId, onResetRole }) => {
+const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onResetRole }) => {
     const [selectedGroupId, setSelectedGroupId] = useState(null);
     const [view, setView] = useState('form');
     const [formData, setFormData] = useState({
@@ -54,22 +55,16 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, onResetRole }
                 const logsRef = collection(db, 'artifacts', appId, 'public', 'data', 'logs');
                 const q = query(
                     logsRef,
-                    where('campaignId', '==', campaignId),
+                    where('groupId', '==', selectedGroupId),
                     orderBy('timestamp', 'desc'),
-                    limit(500) // Límite alto para obtener todos los de la campaña
+                    limit(500)
                 );
 
                 const snapshot = await getDocs(q);
-                const campaignLogs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-                // Filtrar solo los logs de este equipo (o sin groupId para datos migrados)
-                const teamLogs = campaignLogs.filter(log =>
-                    log.groupId === selectedGroupId || !log.groupId
-                );
-
+                const teamLogs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 setAllTeamLogs(teamLogs);
             } catch (error) {
-                console.error('Error fetching logs:', error);
+                console.error('Error cargando logs:', error);
             } finally {
                 setLoadingLogs(false);
             }
@@ -189,9 +184,14 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, onResetRole }
 
         try {
             const selectedGroup = groups.find(g => g.id === selectedGroupId);
-            await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'logs'), {
-                ...formData,
-                holeCount: parseInt(formData.holeCount) || 1, // Store as number
+
+            // Preparar datos del log (sin foto por ahora)
+            const logData = {
+                seedId: formData.seedId,
+                microsite: formData.microsite,
+                quantity: formData.quantity,
+                holeCount: parseInt(formData.holeCount) || 1,
+                notes: formData.notes,
                 campaignId,
                 groupId: selectedGroupId,
                 groupName: selectedGroup?.name || 'Desconocido',
@@ -199,13 +199,25 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, onResetRole }
                 location,
                 timestamp: serverTimestamp(),
                 seedName: seeds.find(s => s.id === formData.seedId)?.species || 'Desconocida'
-            });
+            };
+
+            // Si hay foto, subirla a Storage
+            if (formData.photo && storage) {
+                const logId = `${Date.now()}_${userId}_${Math.random().toString(36).substr(2, 9)}`;
+                const photoRef = ref(storage, `photos/logs/${logId}.jpg`);
+                await uploadString(photoRef, formData.photo, 'data_url');
+                const photoUrl = await getDownloadURL(photoRef);
+                logData.photoUrl = photoUrl;
+            }
+
+            await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'logs'), logData);
 
             setFormData(prev => ({ ...prev, quantity: 1, holeCount: 1, notes: '', photo: null }));
             setCurrentLocation({ lat: null, lng: null, acc: null });
             setGpsStatus('waiting');
             if (window.navigator && window.navigator.vibrate) window.navigator.vibrate(200);
         } catch (error) {
+            console.error('Error guardando:', error);
             alert("Error guardando: " + error.message);
         } finally {
             setIsSubmitting(false);

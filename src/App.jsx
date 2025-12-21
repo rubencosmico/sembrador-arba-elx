@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, query, orderBy, onSnapshot, where } from 'firebase/firestore';
+import { getFirestore, collection, query, orderBy, onSnapshot, where, getDocs } from 'firebase/firestore';
 import { getAuth, signInAnonymously } from 'firebase/auth';
+import { getStorage } from 'firebase/storage';
 
 // Components
 import LoadingScreen from './components/LoadingScreen';
@@ -12,6 +13,7 @@ import SowerView from './components/SowerView';
 
 // Utils
 import { migrateOrphanData } from './utils/migration';
+import MigratePhotos from './utils/migrate-photos';
 
 // --- CONFIG ---
 const getFirebaseConfig = () => {
@@ -32,6 +34,7 @@ const appId = getAppId();
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
+const storage = getStorage(app);
 
 function App() {
     const [user, setUser] = useState(null);
@@ -65,30 +68,28 @@ function App() {
             return;
         }
 
-        // console.log("Fetching data for:", campaign.name);
         const dataPath = ['artifacts', appId, 'public', 'data'];
 
-        // Seeds
-        const qSeeds = query(collection(db, ...dataPath, 'seeds'), where('campaignId', '==', campaign.id));
-        const unsubSeeds = onSnapshot(qSeeds, s => setSeeds(s.docs.map(d => ({ id: d.id, ...d.data() }))));
+        const fetchData = async () => {
+            const qSeeds = query(collection(db, ...dataPath, 'seeds'), where('campaignId', '==', campaign.id));
+            const seedsSnap = await getDocs(qSeeds);
+            setSeeds(seedsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
 
-        // Groups
-        const qGroups = query(collection(db, ...dataPath, 'groups'), where('campaignId', '==', campaign.id));
-        const unsubGroups = onSnapshot(qGroups, s => setGroups(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-
-        // Logs
-        let unsubLogs = () => { };
-        // Coordinator handles its own logs fetching with pagination
-        // if (role === 'coordinator') { ... }
-
-        return () => {
-            unsubSeeds();
-            unsubGroups();
-            unsubLogs();
+            const qGroups = query(collection(db, ...dataPath, 'groups'), where('campaignId', '==', campaign.id));
+            const groupsSnap = await getDocs(qGroups);
+            setGroups(groupsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
         };
+
+        fetchData();
     }, [campaign, role]);
 
     if (loading) return <LoadingScreen />;
+
+    // Modo migración: acceder con ?migrate=photos
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('migrate') === 'photos') {
+        return <MigratePhotos db={db} appId={appId} storage={storage} />;
+    }
 
     // 1. Select Campaign
     if (!campaign) {
@@ -116,6 +117,7 @@ function App() {
             <SowerView
                 db={db} appId={appId} campaignId={campaign.id}
                 seeds={seeds} groups={groups} userId={user?.uid}
+                storage={storage}
                 onResetRole={() => setRole(null)}
             />
         );

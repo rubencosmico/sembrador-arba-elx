@@ -1,0 +1,15 @@
+[
+    {
+        "origin": [
+            "http://localhost:5173",
+            "https://sembrador-arba-elx.vercel.app"
+        ],
+        "method": [
+            "GET",
+            "POST",
+            "PUT",
+            "DELETE"
+        ],
+        "maxAgeSeconds": 3600
+    }
+]
