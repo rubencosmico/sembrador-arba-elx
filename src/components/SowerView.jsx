@@ -35,7 +35,7 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, onResetRole }
                     logsRef,
                     where('campaignId', '==', campaignId),
                     orderBy('timestamp', 'desc'),
-                    limit(100)
+                    limit(500)  // Límite suficiente para cualquier jornada
                 );
 
                 const snapshot = await getDocs(q);
