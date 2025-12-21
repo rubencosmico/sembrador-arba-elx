@@ -14,7 +14,8 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
         seedId: '',
         microsite: 'Nodriza Viva',
         orientation: 'Norte',
-        method: 'Con Sustrato',
+        withSubstrate: true,
+        withProtector: false,
         quantity: '1',
         holeCount: 1,
         notes: '',
@@ -190,7 +191,8 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
                 seedId: formData.seedId,
                 microsite: formData.microsite,
                 orientation: formData.orientation,
-                method: formData.method,
+                withSubstrate: formData.withSubstrate,
+                withProtector: formData.withProtector,
                 quantity: formData.quantity,
                 holeCount: parseInt(formData.holeCount) || 1,
                 notes: formData.notes,
@@ -405,13 +407,32 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
                                 </div>
                             </div>
 
+                            <div className="flex gap-4">
+                                <button
+                                    onClick={() => setFormData({ ...formData, withSubstrate: !formData.withSubstrate })}
+                                    className={`flex-1 py-4 px-4 rounded-2xl border-2 transition-all flex items-center justify-between ${formData.withSubstrate ? 'bg-emerald-50 border-emerald-500 text-emerald-700' : 'bg-white border-emerald-100 text-emerald-900/40'}`}
+                                >
+                                    <span className="text-xs font-black uppercase">Sustrato</span>
+                                    {formData.withSubstrate && <Check size={18} />}
+                                </button>
+                                <button
+                                    onClick={() => setFormData({ ...formData, withProtector: !formData.withProtector })}
+                                    className={`flex-1 py-4 px-4 rounded-2xl border-2 transition-all flex items-center justify-between ${formData.withProtector ? 'bg-amber-50 border-amber-500 text-amber-700' : 'bg-white border-emerald-100 text-emerald-900/40'}`}
+                                >
+                                    <span className="text-xs font-black uppercase">Protector</span>
+                                    <Shield size={18} className={formData.withProtector ? '' : 'opacity-30'} />
+                                </button>
+                            </div>
+
                             <div>
-                                <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-[0.2em] block mb-4">Método / Protector</label>
-                                <div className="flex flex-wrap gap-2">
-                                    {['Con Sustrato', 'Sin Sustrato', 'Con Protector'].map(m => (
-                                        <button key={m} onClick={() => setFormData({ ...formData, method: m })} className={`flex-1 py-3 px-2 text-[10px] font-black uppercase rounded-xl transition-all ${formData.method === m ? 'bg-emerald-600 text-white shadow-sm' : 'bg-emerald-900/5 text-emerald-900/40'}`}>{m}</button>
-                                    ))}
-                                </div>
+                                <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-[0.2em] block mb-3">Notas (Opcional)</label>
+                                <textarea
+                                    value={formData.notes}
+                                    onChange={e => setFormData({ ...formData, notes: e.target.value })}
+                                    placeholder="Observaciones, estado del terreno, etc."
+                                    className="w-full p-4 rounded-2xl border-2 border-emerald-100 focus:border-emerald-500 outline-none text-sm resize-none"
+                                    rows={2}
+                                />
                             </div>
 
                             <button
