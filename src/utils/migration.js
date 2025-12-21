@@ -5,39 +5,44 @@ export const migrateOrphanData = async (db, appId) => {
         const collections = ['seeds', 'groups', 'logs'];
         const needsMigration = {};
 
+        console.log("--------------------------------");
+        console.log("STARTING DATA AUDIT");
+
         // Check for orphans
         for (const colName of collections) {
-            // Firestore doesn't support checking for "missing field" easily in one query without an index (sometimes).
-            // But we can check for campaignId == null or missing? 
-            // Actually, querying for null doesn't find missing fields.
-            // Safest way for small dataset: fetch all and check. 
-            // If dataset is huge, this is bad. Assuming reasonable size for now.
-            // BETTER: Use a marker to run only once? No, requirements say "Al iniciar la app... detecta si hay documentos huérfanos".
-
-            // For now, let's fetch all and check client side. 
-            // In a real huge app, we'd use a cloud function.
             const q = collection(db, 'artifacts', appId, 'public', 'data', colName);
             const snapshot = await getDocs(q);
+
+            const total = snapshot.docs.length;
             const orphans = snapshot.docs.filter(doc => !doc.data().campaignId);
+            const campaigns = {};
+            snapshot.docs.forEach(d => {
+                const cid = d.data().campaignId || 'ORPHAN';
+                campaigns[cid] = (campaigns[cid] || 0) + 1;
+            });
+
+            console.log(`Collection [${colName}]: Total ${total} docs.`);
+            console.log(`   - Orphans: ${orphans.length}`);
+            console.log(`   - Distribution:`, campaigns);
 
             if (orphans.length > 0) {
                 needsMigration[colName] = orphans;
             }
         }
+        console.log("--------------------------------");
 
         const totalOrphans = Object.values(needsMigration).reduce((acc, curr) => acc + curr.length, 0);
 
-        if (totalOrphans === 0) return;
+        if (totalOrphans === 0) {
+            console.log("No orphans found. Everything seems clean.");
+            alert("No hay datos antiguos para migrar. Todo parece estar en orden.");
+            return;
+        }
 
-        console.log(`Found ${totalOrphans} orphan documents. Migrating...`);
+        console.log(`Found ${totalOrphans} orphan documents to migrate.`);
 
-        // Create Archive Campaign
-        // Check if exists first? Or just create "Jornada 1 (Archivo)"
-        // To avoid dupes, we could query campaigns by name, but creating a new one is safer if we just want to dump orphans.
-        // Let's create one.
-
+        // Create Archive Campaign or find it
         const campaignsRef = collection(db, 'artifacts', appId, 'public', 'data', 'campaigns');
-        // Check if "Jornada 1 (Archivo)" exists
         const campQ = query(campaignsRef, where("name", "==", "Jornada 1 (Archivo)"));
         const campSnap = await getDocs(campQ);
 
@@ -53,25 +58,42 @@ export const migrateOrphanData = async (db, appId) => {
             archiveId = newCamp.id;
         }
 
-        // Batch update (limit 500 per batch)
-        const batch = writeBatch(db);
+        console.log(`Migrating to campaign: ${archiveId} (Jornada 1)`);
+
+        // Batch update (chunking to respect limits)
+        const CHUNK_SIZE = 10;
+        let currentBatch = writeBatch(db);
+        let batchCount = 0;
         let operationCount = 0;
 
         for (const colName in needsMigration) {
             for (const docSnapshot of needsMigration[colName]) {
                 const docRef = doc(db, 'artifacts', appId, 'public', 'data', colName, docSnapshot.id);
-                batch.update(docRef, { campaignId: archiveId });
+                currentBatch.update(docRef, { campaignId: archiveId });
+                batchCount++;
                 operationCount++;
+
+                if (batchCount >= CHUNK_SIZE) {
+                    await currentBatch.commit();
+                    currentBatch = writeBatch(db);
+                    batchCount = 0;
+                }
             }
         }
 
+        if (batchCount > 0) {
+            await currentBatch.commit();
+        }
+
         if (operationCount > 0) {
-            await batch.commit();
-            console.log("Migration complete.");
+            console.log(`Migration complete. Migrated ${operationCount} docs.`);
             alert(`Se han migrado ${operationCount} datos antiguos a 'Jornada 1 (Archivo)'`);
+        } else {
+            console.log("Migration finished but 0 operations?");
         }
 
     } catch (e) {
         console.error("Migration failed", e);
+        alert("Error en la migración: " + e.message);
     }
 };

@@ -46,13 +46,13 @@ function App() {
 
     // Auth
     useEffect(() => {
-        signInAnonymously(auth).catch(console.error);
-        return auth.onAuthStateChanged(u => {
-            if (u) {
-                setUser(u);
-                // Trigger migration once on load
-                migrateOrphanData(db, appId).then(() => setLoading(false));
-            }
+        signInAnonymously(auth).then((u) => {
+            console.log("Auth success", u.user.uid);
+            setUser(u.user);
+            setLoading(false);
+        }).catch(err => {
+            console.error("Auth failed", err);
+            setLoading(false);
         });
     }, []);
 
@@ -65,6 +65,7 @@ function App() {
             return;
         }
 
+        // console.log("Fetching data for:", campaign.name);
         const dataPath = ['artifacts', appId, 'public', 'data'];
 
         // Seeds
@@ -75,24 +76,10 @@ function App() {
         const qGroups = query(collection(db, ...dataPath, 'groups'), where('campaignId', '==', campaign.id));
         const unsubGroups = onSnapshot(qGroups, s => setGroups(s.docs.map(d => ({ id: d.id, ...d.data() }))));
 
-        // Logs - Only fetch if Coordinator to verify/manage, OR fetch always if small. 
-        // For Coordinator Data tab we need it.
-        // Let's optimize: fetch only if role === 'coordinator'.
+        // Logs
         let unsubLogs = () => { };
-        if (role === 'coordinator') {
-            // Removing orderBy from server query to avoid requiring a composite index immediately.
-            // Sorting client-side instead.
-            const qLogs = query(collection(db, ...dataPath, 'logs'), where('campaignId', '==', campaign.id));
-            unsubLogs = onSnapshot(qLogs, (s) => {
-                const fetchedLogs = s.docs.map(d => ({ id: d.id, ...d.data() }));
-                // Sort by timestamp desc
-                fetchedLogs.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
-                setLogs(fetchedLogs);
-            }, (error) => {
-                console.error("Error fetching logs:", error);
-                alert("Error cargando datos. Revisa la consola.");
-            });
-        }
+        // Coordinator handles its own logs fetching with pagination
+        // if (role === 'coordinator') { ... }
 
         return () => {
             unsubSeeds();

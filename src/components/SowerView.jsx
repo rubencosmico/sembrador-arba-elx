@@ -26,13 +26,13 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, onResetRole }
     useEffect(() => {
         if (!userId || !selectedGroupId || !campaignId) return;
         const q = query(
-            collection(db, 'artifacts', appId, 'public', 'data', 'logs'),
-            orderBy('timestamp', 'desc')
+            collection(db, 'artifacts', appId, 'public', 'data', 'logs')
         );
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const logs = snapshot.docs
                 .map(doc => ({ id: doc.id, ...doc.data() }))
-                .filter(log => log.campaignId === campaignId && log.groupId === selectedGroupId); // Client-side filtering for simplicity, or complex index
+                .filter(log => log.campaignId === campaignId && log.groupId === selectedGroupId)
+                .sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0)); // Client-side sort
             setMyLogs(logs);
         });
         return () => unsubscribe();

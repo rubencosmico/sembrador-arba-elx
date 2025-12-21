@@ -8,9 +8,9 @@ const CampaignSelector = ({ db, appId, onSelectCampaign }) => {
     const [showCreate, setShowCreate] = useState(false);
 
     useEffect(() => {
+        // Removed orderBy to avoid 404/Index issues temporarily
         const q = query(
-            collection(db, 'artifacts', appId, 'public', 'data', 'campaigns'),
-            orderBy('createdAt', 'desc')
+            collection(db, 'artifacts', appId, 'public', 'data', 'campaigns')
         );
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const camps = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));

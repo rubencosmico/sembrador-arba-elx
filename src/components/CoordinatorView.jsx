@@ -1,17 +1,74 @@
-import React, { useState } from 'react';
-import { addDoc, collection, serverTimestamp, doc, updateDoc, deleteDoc, arrayUnion } from 'firebase/firestore';
+import React, { useState, useEffect } from 'react';
+import { addDoc, collection, serverTimestamp, doc, updateDoc, deleteDoc, arrayUnion, query, where, orderBy, limit, startAfter, getDocs } from 'firebase/firestore';
 import {
     Leaf, Users, MapPin, ClipboardList, PlusCircle, Save, LogOut, Info,
     Download, Trash2, Edit2, Map as MapIcon, Table as TableIcon, X, Camera
 } from 'lucide-react';
 import MapView from './MapView';
 
-const CoordinatorView = ({ db, appId, campaignId, seeds, groups, logs, onResetRole }) => {
+const CoordinatorView = ({ db, appId, campaignId, seeds, groups, onResetRole }) => {
+
+    // Local state for logs (moved from App.jsx for pagination)
+    const [logs, setLogs] = useState([]);
+    const [lastDoc, setLastDoc] = useState(null);
+    const [loadingLogs, setLoadingLogs] = useState(false);
+    const [hasMore, setHasMore] = useState(true);
+
+    const fetchLogs = async (isNextPage = false) => {
+        if (loadingLogs) return;
+        setLoadingLogs(true);
+        try {
+            const logsRef = collection(db, 'artifacts', appId, 'public', 'data', 'logs');
+            let q;
+
+            if (isNextPage && lastDoc) {
+                q = query(
+                    logsRef,
+                    where('campaignId', '==', campaignId),
+                    orderBy('timestamp', 'desc'),
+                    startAfter(lastDoc),
+                    limit(20)
+                );
+            } else {
+                // First page
+                q = query(
+                    logsRef,
+                    where('campaignId', '==', campaignId),
+                    orderBy('timestamp', 'desc'),
+                    limit(20)
+                );
+            }
+
+            const snapshot = await getDocs(q);
+            const newLogs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+            setLastDoc(snapshot.docs[snapshot.docs.length - 1]);
+            setHasMore(snapshot.docs.length === 20);
+
+            if (isNextPage) {
+                setLogs(prev => [...prev, ...newLogs]);
+            } else {
+                setLogs(newLogs);
+            }
+
+        } catch (error) {
+            console.error("Error loading logs (Pagination):", error);
+        } finally {
+            setLoadingLogs(false);
+        }
+    };
+
+    // Load initial logs
+    useEffect(() => {
+        fetchLogs();
+    }, [campaignId]);
+
     const [newSeed, setNewSeed] = useState({ species: '', provider: '', treatment: '', quantity: '', photo: null });
     const [newGroup, setNewGroup] = useState('');
     const [activeTab, setActiveTab] = useState('seeds');
     const [viewMode, setViewMode] = useState('table'); // 'table' or 'map'
     const [editingLog, setEditingLog] = useState(null); // Log being edited
+    const [expandedLogId, setExpandedLogId] = useState(null); // Log currently expanded for details
 
     const compressImage = (file, maxWidth = 800) => {
         return new Promise((resolve) => {
@@ -347,21 +404,85 @@ const CoordinatorView = ({ db, appId, campaignId, seeds, groups, logs, onResetRo
                                         </thead>
                                         <tbody className="text-sm text-emerald-900">
                                             {logs.map(log => (
-                                                <tr key={log.id} className="border-b border-emerald-50 hover:bg-white/50">
-                                                    <td className="p-3 font-medium">
-                                                        {log.timestamp?.seconds ? new Date(log.timestamp.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
-                                                    </td>
-                                                    <td className="p-3">{log.groupName}</td>
-                                                    <td className="p-3">{log.seedName}</td>
-                                                    <td className="p-3 font-bold">{log.holeCount || 1}</td>
-                                                    <td className="p-3 flex gap-2">
-                                                        <button onClick={() => setEditingLog(log)} className="p-1 hover:bg-emerald-100 rounded text-emerald-600"><Edit2 size={14} /></button>
-                                                        <button onClick={() => handleDeleteLog(log.id)} className="p-1 hover:bg-red-100 rounded text-red-500"><Trash2 size={14} /></button>
-                                                    </td>
-                                                </tr>
+                                                <React.Fragment key={log.id}>
+                                                    <tr
+                                                        onClick={() => setExpandedLogId(expandedLogId === log.id ? null : log.id)}
+                                                        className={`border-b border-emerald-50 hover:bg-white/50 cursor-pointer transition-colors ${expandedLogId === log.id ? 'bg-emerald-50/50' : ''}`}
+                                                    >
+                                                        <td className="p-3 font-medium">
+                                                            {log.timestamp?.seconds ? new Date(log.timestamp.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
+                                                        </td>
+                                                        <td className="p-3">{log.groupName}</td>
+                                                        <td className="p-3">{log.seedName}</td>
+                                                        <td className="p-3 font-bold">{log.holeCount || 1}</td>
+                                                        <td className="p-3 flex gap-2" onClick={e => e.stopPropagation()}>
+                                                            <button onClick={() => setEditingLog(log)} className="p-1 hover:bg-emerald-100 rounded text-emerald-600"><Edit2 size={14} /></button>
+                                                            <button onClick={() => handleDeleteLog(log.id)} className="p-1 hover:bg-red-100 rounded text-red-500"><Trash2 size={14} /></button>
+                                                        </td>
+                                                    </tr>
+                                                    {expandedLogId === log.id && (
+                                                        <tr className="bg-emerald-50/30 animate-fadeIn">
+                                                            <td colSpan="5" className="p-4">
+                                                                <div className="flex gap-4 items-start">
+                                                                    {log.photo ? (
+                                                                        <div className="w-32 h-32 shrink-0 rounded-xl overflow-hidden border-2 border-white shadow-sm">
+                                                                            <img src={log.photo} alt="Evidencia" className="w-full h-full object-cover" />
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="w-32 h-32 shrink-0 rounded-xl bg-emerald-100/50 flex flex-col items-center justify-center text-emerald-800/30 border-2 border-white shadow-sm">
+                                                                            <Camera size={24} />
+                                                                            <span className="text-[10px] font-bold uppercase mt-1">Sin foto</span>
+                                                                        </div>
+                                                                    )}
+                                                                    <div className="space-y-2 text-sm text-emerald-900">
+                                                                        <div>
+                                                                            <span className="text-[10px] font-bold text-emerald-800/50 uppercase tracking-wider block">Micrositio</span>
+                                                                            <span className="font-medium">{log.microsite}</span>
+                                                                        </div>
+                                                                        {log.notes && (
+                                                                            <div>
+                                                                                <span className="text-[10px] font-bold text-emerald-800/50 uppercase tracking-wider block">Notas</span>
+                                                                                <span className="italic">"{log.notes}"</span>
+                                                                            </div>
+                                                                        )}
+                                                                        <div>
+                                                                            <span className="text-[10px] font-bold text-emerald-800/50 uppercase tracking-wider block">Ubicación</span>
+                                                                            <span className="font-mono text-xs">{log.location?.lat?.toFixed(6)}, {log.location?.lng?.toFixed(6)} (±{log.location?.acc?.toFixed(0)}m)</span>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                </React.Fragment>
                                             ))}
                                         </tbody>
                                     </table>
+                                </div>
+                            )}
+
+                            {/* Pagination Controls */}
+                            {viewMode === 'table' && (
+                                <div className="mt-6 flex justify-center">
+                                    {loadingLogs ? (
+                                        <div className="flex items-center gap-2 text-emerald-800/50 font-bold text-sm animate-pulse">
+                                            <span className="w-2 h-2 bg-emerald-600 rounded-full animate-bounce"></span>
+                                            Cargando datos...
+                                        </div>
+                                    ) : (
+                                        hasMore && (
+                                            <button
+                                                onClick={() => fetchLogs(true)}
+                                                className="px-6 py-3 bg-white border border-emerald-100/50 rounded-xl text-emerald-800 font-bold text-sm shadow-sm hover:bg-emerald-50 transition-colors flex items-center gap-2"
+                                            >
+                                                <Download size={16} className="rotate-180" />
+                                                Cargar más registros
+                                            </button>
+                                        )
+                                    )}
+                                    {!hasMore && logs.length > 0 && (
+                                        <p className="text-[10px] font-bold text-emerald-900/30 uppercase tracking-widest mt-2">No hay más registros</p>
+                                    )}
                                 </div>
                             )}
                         </section>
@@ -370,38 +491,40 @@ const CoordinatorView = ({ db, appId, campaignId, seeds, groups, logs, onResetRo
             </div>
 
             {/* Editing Modal */}
-            {editingLog && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/50 backdrop-blur-sm">
-                    <div className="bg-white p-6 rounded-3xl w-full max-w-sm shadow-2xl animate-slideUp">
-                        <h3 className="font-bold text-lg text-emerald-950 mb-4">Editar Registro</h3>
-                        <form onSubmit={handleUpdateLog} className="space-y-4">
-                            <div>
-                                <label className="text-[10px] font-bold text-emerald-800/40 uppercase">Cantidad de Golpes</label>
-                                <input
-                                    type="number"
-                                    min="1"
-                                    className="w-full p-3 bg-emerald-50 rounded-xl font-bold text-emerald-900 outline-none"
-                                    value={editingLog.holeCount || 1}
-                                    onChange={e => setEditingLog({ ...editingLog, holeCount: e.target.value })}
-                                />
-                            </div>
-                            <div>
-                                <label className="text-[10px] font-bold text-emerald-800/40 uppercase">Notas</label>
-                                <textarea
-                                    className="w-full p-3 bg-emerald-50 rounded-xl text-sm outline-none"
-                                    value={editingLog.notes || ''}
-                                    onChange={e => setEditingLog({ ...editingLog, notes: e.target.value })}
-                                />
-                            </div>
-                            <div className="flex gap-3">
-                                <button type="button" onClick={() => setEditingLog(null)} className="flex-1 py-3 text-emerald-600 font-bold">Cancelar</button>
-                                <button type="submit" className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-bold">Guardar</button>
-                            </div>
-                        </form>
+            {
+                editingLog && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/50 backdrop-blur-sm">
+                        <div className="bg-white p-6 rounded-3xl w-full max-w-sm shadow-2xl animate-slideUp">
+                            <h3 className="font-bold text-lg text-emerald-950 mb-4">Editar Registro</h3>
+                            <form onSubmit={handleUpdateLog} className="space-y-4">
+                                <div>
+                                    <label className="text-[10px] font-bold text-emerald-800/40 uppercase">Cantidad de Golpes</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        className="w-full p-3 bg-emerald-50 rounded-xl font-bold text-emerald-900 outline-none"
+                                        value={editingLog.holeCount || 1}
+                                        onChange={e => setEditingLog({ ...editingLog, holeCount: e.target.value })}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] font-bold text-emerald-800/40 uppercase">Notas</label>
+                                    <textarea
+                                        className="w-full p-3 bg-emerald-50 rounded-xl text-sm outline-none"
+                                        value={editingLog.notes || ''}
+                                        onChange={e => setEditingLog({ ...editingLog, notes: e.target.value })}
+                                    />
+                                </div>
+                                <div className="flex gap-3">
+                                    <button type="button" onClick={() => setEditingLog(null)} className="flex-1 py-3 text-emerald-600 font-bold">Cancelar</button>
+                                    <button type="submit" className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-bold">Guardar</button>
+                                </div>
+                            </form>
+                        </div>
                     </div>
-                </div>
-            )}
-        </div>
+                )
+            }
+        </div >
     );
 };
 
