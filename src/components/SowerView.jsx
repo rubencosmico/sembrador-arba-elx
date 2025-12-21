@@ -245,7 +245,7 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, onResetRole }
 
     const selectedGroup = groups.find(g => g.id === selectedGroupId);
     const mySeeds = selectedGroup ? seeds.filter(s => selectedGroup.assignedSeeds?.includes(s.id)) : [];
-    const totalHoles = myLogs.reduce((acc, log) => acc + (parseInt(log.holeCount) || 1), 0);
+    const totalHoles = totalTeamHoles; // Usar el cálculo desde allTeamLogs
 
     if (!selectedGroupId) {
         // Team Selection Screen (Simplified copy from original)
@@ -544,8 +544,8 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, onResetRole }
                                                     key={pageNum}
                                                     onClick={() => goToPage(pageNum)}
                                                     className={`w-9 h-9 flex items-center justify-center rounded-xl font-bold text-sm transition-colors ${currentPage === pageNum
-                                                            ? 'bg-emerald-600 text-white'
-                                                            : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                                                        ? 'bg-emerald-600 text-white'
+                                                        : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
                                                         }`}
                                                 >
                                                     {pageNum}
