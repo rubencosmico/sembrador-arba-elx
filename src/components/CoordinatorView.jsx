@@ -424,9 +424,9 @@ const CoordinatorView = ({ db, appId, campaignId, seeds, groups, onResetRole }) 
                                                         <tr className="bg-emerald-50/30 animate-fadeIn">
                                                             <td colSpan="5" className="p-4">
                                                                 <div className="flex gap-4 items-start">
-                                                                    {log.photo ? (
+                                                                    {(log.photoUrl || log.photo) ? (
                                                                         <div className="w-32 h-32 shrink-0 rounded-xl overflow-hidden border-2 border-white shadow-sm">
-                                                                            <img src={log.photo} alt="Evidencia" className="w-full h-full object-cover" />
+                                                                            <img src={log.photoUrl || log.photo} alt="Evidencia" className="w-full h-full object-cover" />
                                                                         </div>
                                                                     ) : (
                                                                         <div className="w-32 h-32 shrink-0 rounded-xl bg-emerald-100/50 flex flex-col items-center justify-center text-emerald-800/30 border-2 border-white shadow-sm">
