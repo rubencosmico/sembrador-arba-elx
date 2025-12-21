@@ -31,7 +31,7 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, onResetRole }
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const logs = snapshot.docs
                 .map(doc => ({ id: doc.id, ...doc.data() }))
-                .filter(log => log.campaignId === campaignId && log.groupId === selectedGroupId)
+                .filter(log => log.campaignId === campaignId && (log.groupId === selectedGroupId || !log.groupId))
                 .sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0)); // Client-side sort
             setMyLogs(logs);
         });
