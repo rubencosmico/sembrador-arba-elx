@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { addDoc, collection, serverTimestamp, query, orderBy, onSnapshot, where, getDocs, limit } from 'firebase/firestore';
 import {
     Users, LogOut, ArrowRight, AlertTriangle, PlusCircle, History,
-    Leaf, Check, Compass, Shield, MapPin, Camera, X, Save
+    Leaf, Check, Compass, Shield, MapPin, Camera, X, Save,
+    Search, ChevronDown, ChevronUp
 } from 'lucide-react';
 
 const SowerView = ({ db, appId, campaignId, seeds, groups, userId, onResetRole }) => {
@@ -23,6 +24,13 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, onResetRole }
     const [loadingLogs, setLoadingLogs] = useState(false);
     const [gpsStatus, setGpsStatus] = useState('waiting');
     const [currentLocation, setCurrentLocation] = useState({ lat: null, lng: null, acc: null });
+
+    // Estados para el cuaderno de campo
+    const LOGS_PER_PAGE = 10;
+    const [visibleCount, setVisibleCount] = useState(LOGS_PER_PAGE);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [sortField, setSortField] = useState('timestamp'); // 'timestamp', 'seedName', 'microsite'
+    const [sortDirection, setSortDirection] = useState('desc'); // 'asc' o 'desc'
 
     useEffect(() => {
         if (!selectedGroupId || !campaignId) return;
@@ -55,6 +63,68 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, onResetRole }
 
         fetchLogs();
     }, [selectedGroupId, campaignId]);
+
+    // Resetear paginación cuando cambian los filtros
+    useEffect(() => {
+        setVisibleCount(LOGS_PER_PAGE);
+    }, [searchTerm, sortField, sortDirection]);
+
+    // Logs filtrados y ordenados
+    const filteredAndSortedLogs = useMemo(() => {
+        let result = [...myLogs];
+
+        // Filtrar por búsqueda
+        if (searchTerm.trim()) {
+            const term = searchTerm.toLowerCase();
+            result = result.filter(log =>
+                (log.seedName || '').toLowerCase().includes(term) ||
+                (log.microsite || '').toLowerCase().includes(term)
+            );
+        }
+
+        // Ordenar
+        result.sort((a, b) => {
+            let valA, valB;
+            if (sortField === 'timestamp') {
+                valA = a.timestamp?.seconds || 0;
+                valB = b.timestamp?.seconds || 0;
+            } else if (sortField === 'seedName') {
+                valA = (a.seedName || '').toLowerCase();
+                valB = (b.seedName || '').toLowerCase();
+            } else if (sortField === 'microsite') {
+                valA = (a.microsite || '').toLowerCase();
+                valB = (b.microsite || '').toLowerCase();
+            }
+
+            if (sortDirection === 'asc') {
+                return valA > valB ? 1 : valA < valB ? -1 : 0;
+            } else {
+                return valA < valB ? 1 : valA > valB ? -1 : 0;
+            }
+        });
+
+        return result;
+    }, [myLogs, searchTerm, sortField, sortDirection]);
+
+    // Logs visibles (paginados)
+    const visibleLogs = useMemo(() => {
+        return filteredAndSortedLogs.slice(0, visibleCount);
+    }, [filteredAndSortedLogs, visibleCount]);
+
+    // Función para cambiar ordenación
+    const handleSort = (field) => {
+        if (sortField === field) {
+            setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+        } else {
+            setSortField(field);
+            setSortDirection('asc');
+        }
+    };
+
+    // Cargar más registros
+    const loadMore = () => {
+        setVisibleCount(prev => prev + LOGS_PER_PAGE);
+    };
 
     const captureGPS = async () => {
         if (!("geolocation" in navigator)) return;
@@ -327,7 +397,64 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, onResetRole }
 
             {view === 'history' && (
                 <div className="px-5 space-y-4 animate-slideUp pb-12 pt-4">
-                    <h3 className="text-lg font-bold text-emerald-950">Historial reciente</h3>
+                    <div className="flex justify-between items-center">
+                        <h3 className="text-lg font-bold text-emerald-950">Cuaderno de Campo</h3>
+                        {!loadingLogs && myLogs.length > 0 && (
+                            <span className="text-xs font-bold text-emerald-800/50 bg-emerald-100 px-3 py-1 rounded-full">
+                                {visibleLogs.length} de {filteredAndSortedLogs.length} registros
+                            </span>
+                        )}
+                    </div>
+
+                    {/* Buscador */}
+                    {!loadingLogs && myLogs.length > 0 && (
+                        <div className="relative">
+                            <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-400" />
+                            <input
+                                type="text"
+                                placeholder="Buscar por semilla o micrositio..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="w-full pl-10 pr-4 py-3 bg-white border border-emerald-100 rounded-2xl text-sm outline-none focus:border-emerald-500 transition-colors"
+                            />
+                            {searchTerm && (
+                                <button
+                                    onClick={() => setSearchTerm('')}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-400 hover:text-emerald-600"
+                                >
+                                    <X size={16} />
+                                </button>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Botones de ordenación */}
+                    {!loadingLogs && myLogs.length > 0 && (
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => handleSort('seedName')}
+                                className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${sortField === 'seedName' ? 'bg-emerald-600 text-white' : 'bg-emerald-100 text-emerald-700'}`}
+                            >
+                                Semilla
+                                {sortField === 'seedName' && (sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}
+                            </button>
+                            <button
+                                onClick={() => handleSort('microsite')}
+                                className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${sortField === 'microsite' ? 'bg-emerald-600 text-white' : 'bg-emerald-100 text-emerald-700'}`}
+                            >
+                                Micrositio
+                                {sortField === 'microsite' && (sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}
+                            </button>
+                            <button
+                                onClick={() => handleSort('timestamp')}
+                                className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${sortField === 'timestamp' ? 'bg-emerald-600 text-white' : 'bg-emerald-100 text-emerald-700'}`}
+                            >
+                                Fecha
+                                {sortField === 'timestamp' && (sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}
+                            </button>
+                        </div>
+                    )}
+
                     {loadingLogs ? (
                         <div className="flex flex-col items-center justify-center py-12 gap-3">
                             <div className="w-8 h-8 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin"></div>
@@ -338,19 +465,42 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, onResetRole }
                             <History size={32} className="mx-auto mb-2 opacity-50" />
                             <p className="text-sm font-medium">Sin registros todavía</p>
                         </div>
+                    ) : filteredAndSortedLogs.length === 0 ? (
+                        <div className="text-center py-12 text-emerald-800/40">
+                            <Search size={32} className="mx-auto mb-2 opacity-50" />
+                            <p className="text-sm font-medium">No se encontraron resultados</p>
+                            <button onClick={() => setSearchTerm('')} className="mt-2 text-xs text-emerald-600 font-bold underline">
+                                Limpiar búsqueda
+                            </button>
+                        </div>
                     ) : (
-                        myLogs.map(log => (
-                            <div key={log.id} className="glass-card p-4 rounded-2xl border border-emerald-100/30 flex justify-between items-center">
-                                <div>
-                                    <div className="font-bold text-emerald-950 text-sm">{log.seedName}</div>
-                                    <div className="text-xs text-emerald-800/50">{log.microsite}</div>
-                                </div>
-                                <div className="text-right">
-                                    <div className="font-black text-emerald-700 text-lg">{log.holeCount || 1}</div>
-                                    <div className="text-[9px] font-bold text-emerald-800/30 uppercase">Golpes</div>
-                                </div>
+                        <>
+                            <div className="space-y-3">
+                                {visibleLogs.map(log => (
+                                    <div key={log.id} className="glass-card p-4 rounded-2xl border border-emerald-100/30 flex justify-between items-center">
+                                        <div>
+                                            <div className="font-bold text-emerald-950 text-sm">{log.seedName}</div>
+                                            <div className="text-xs text-emerald-800/50">{log.microsite}</div>
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="font-black text-emerald-700 text-lg">{log.holeCount || 1}</div>
+                                            <div className="text-[9px] font-bold text-emerald-800/30 uppercase">Golpes</div>
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
-                        ))
+
+                            {/* Botón cargar más */}
+                            {visibleCount < filteredAndSortedLogs.length && (
+                                <button
+                                    onClick={loadMore}
+                                    className="w-full py-3 bg-emerald-100 text-emerald-700 rounded-2xl font-bold text-sm hover:bg-emerald-200 transition-colors flex items-center justify-center gap-2"
+                                >
+                                    <ChevronDown size={16} />
+                                    Cargar más ({filteredAndSortedLogs.length - visibleCount} restantes)
+                                </button>
+                            )}
+                        </>
                     )}
                 </div>
             )}
