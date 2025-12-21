@@ -189,6 +189,8 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
             const logData = {
                 seedId: formData.seedId,
                 microsite: formData.microsite,
+                orientation: formData.orientation,
+                method: formData.method,
                 quantity: formData.quantity,
                 holeCount: parseInt(formData.holeCount) || 1,
                 notes: formData.notes,
@@ -381,6 +383,33 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
                                 <div className="flex p-1.5 bg-emerald-900/5 rounded-2xl">
                                     {['Nodriza Viva', 'Nodriza Muerta', 'Alcorque'].map(m => (
                                         <button key={m} onClick={() => setFormData({ ...formData, microsite: m })} className={`flex-1 py-3 text-[10px] font-black uppercase rounded-xl transition-all ${formData.microsite === m ? 'bg-white text-emerald-900 shadow-sm' : 'text-emerald-900/40'}`}>{m}</button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-[0.2em] block mb-4">Orientación</label>
+                                <div className="flex p-1.5 bg-emerald-900/5 rounded-2xl">
+                                    {['Norte', 'Sur', 'Este', 'Oeste'].map(o => (
+                                        <button key={o} onClick={() => setFormData({ ...formData, orientation: o })} className={`flex-1 py-3 text-[10px] font-black uppercase rounded-xl transition-all ${formData.orientation === o ? 'bg-white text-emerald-900 shadow-sm' : 'text-emerald-900/40'}`}>{o}</button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-[0.2em] block mb-4">Semillas por Hoyo</label>
+                                <div className="flex p-1.5 bg-emerald-900/5 rounded-2xl">
+                                    {['1', '2', '3', '4', '5'].map(q => (
+                                        <button key={q} onClick={() => setFormData({ ...formData, quantity: q })} className={`flex-1 py-3 text-[10px] font-black uppercase rounded-xl transition-all ${formData.quantity === q ? 'bg-white text-emerald-900 shadow-sm' : 'text-emerald-900/40'}`}>{q}</button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-[0.2em] block mb-4">Método / Protector</label>
+                                <div className="flex flex-wrap gap-2">
+                                    {['Con Sustrato', 'Sin Sustrato', 'Con Protector'].map(m => (
+                                        <button key={m} onClick={() => setFormData({ ...formData, method: m })} className={`flex-1 py-3 px-2 text-[10px] font-black uppercase rounded-xl transition-all ${formData.method === m ? 'bg-emerald-600 text-white shadow-sm' : 'bg-emerald-900/5 text-emerald-900/40'}`}>{m}</button>
                                     ))}
                                 </div>
                             </div>
