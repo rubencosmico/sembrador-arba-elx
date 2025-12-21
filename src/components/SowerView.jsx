@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { addDoc, collection, serverTimestamp, query, orderBy, onSnapshot, where, getDocs, limit, getCountFromServer, startAfter } from 'firebase/firestore';
+import { addDoc, collection, serverTimestamp, query, orderBy, where, getDocs, limit } from 'firebase/firestore';
 import {
     Users, LogOut, ArrowRight, AlertTriangle, PlusCircle, History,
     Leaf, Check, Compass, Shield, MapPin, Camera, X, Save,
@@ -22,62 +22,47 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, onResetRole }
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [myLogs, setMyLogs] = useState([]);
     const [loadingLogs, setLoadingLogs] = useState(false);
-    const [loadingMore, setLoadingMore] = useState(false);
     const [gpsStatus, setGpsStatus] = useState('waiting');
     const [currentLocation, setCurrentLocation] = useState({ lat: null, lng: null, acc: null });
 
-    // Estados para el cuaderno de campo con paginación real
+    // Estados para el cuaderno de campo con paginación en cliente
     const LOGS_PER_PAGE = 10;
-    const [totalLogsCount, setTotalLogsCount] = useState(0);
-    const [lastDoc, setLastDoc] = useState(null);
-    const [hasMore, setHasMore] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [sortField, setSortField] = useState('seedName'); // 'seedName' o 'microsite'
     const [sortDirection, setSortDirection] = useState('asc'); // 'asc' o 'desc'
 
-    // Función para obtener la referencia de logs
-    const getLogsRef = useCallback(() => {
-        return collection(db, 'artifacts', appId, 'public', 'data', 'logs');
-    }, [db, appId]);
+    // Estados para paginación en cliente
+    const [allTeamLogs, setAllTeamLogs] = useState([]); // Todos los logs del equipo
+    const [visibleCount, setVisibleCount] = useState(LOGS_PER_PAGE);
 
-    // Cargar logs iniciales
+    // Cargar todos los logs de la campaña y filtrar por equipo
     useEffect(() => {
         if (!selectedGroupId || !campaignId) return;
 
-        const fetchInitialLogs = async () => {
+        const fetchLogs = async () => {
             setLoadingLogs(true);
-            setMyLogs([]);
-            setLastDoc(null);
-            setHasMore(false);
+            setAllTeamLogs([]);
+            setVisibleCount(LOGS_PER_PAGE);
 
             try {
-                const logsRef = getLogsRef();
-
-                // 1. Primero obtener el conteo total
-                const countQuery = query(
-                    logsRef,
-                    where('campaignId', '==', campaignId)
-                );
-                const countSnapshot = await getCountFromServer(countQuery);
-                setTotalLogsCount(countSnapshot.data().count);
-
-                // 2. Luego cargar los primeros LOGS_PER_PAGE registros
+                const logsRef = collection(db, 'artifacts', appId, 'public', 'data', 'logs');
                 const q = query(
                     logsRef,
                     where('campaignId', '==', campaignId),
                     orderBy('timestamp', 'desc'),
-                    limit(LOGS_PER_PAGE)
+                    limit(500) // Límite alto para obtener todos los de la campaña
                 );
 
                 const snapshot = await getDocs(q);
-                const logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                const campaignLogs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-                // Filtrar por groupId en cliente (incluir logs sin groupId para datos migrados)
-                const filteredLogs = logs.filter(log => log.groupId === selectedGroupId || !log.groupId);
+                // Filtrar solo los logs de este equipo (o sin groupId para datos migrados)
+                const teamLogs = campaignLogs.filter(log =>
+                    log.groupId === selectedGroupId || !log.groupId
+                );
 
-                setMyLogs(filteredLogs);
-                setLastDoc(snapshot.docs[snapshot.docs.length - 1] || null);
-                setHasMore(snapshot.docs.length === LOGS_PER_PAGE);
+                setAllTeamLogs(teamLogs);
+                setMyLogs(teamLogs.slice(0, LOGS_PER_PAGE));
             } catch (error) {
                 console.error('Error fetching logs:', error);
             } finally {
@@ -85,39 +70,18 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, onResetRole }
             }
         };
 
-        fetchInitialLogs();
-    }, [selectedGroupId, campaignId, getLogsRef]);
+        fetchLogs();
+    }, [selectedGroupId, campaignId, db, appId]);
 
-    // Función para cargar más logs
-    const loadMoreLogs = useCallback(async () => {
-        if (!lastDoc || loadingMore || !hasMore) return;
+    // Función para cargar más logs (paginación en cliente)
+    const loadMoreLogs = useCallback(() => {
+        const newCount = visibleCount + LOGS_PER_PAGE;
+        setVisibleCount(newCount);
+        setMyLogs(allTeamLogs.slice(0, newCount));
+    }, [allTeamLogs, visibleCount]);
 
-        setLoadingMore(true);
-        try {
-            const logsRef = getLogsRef();
-            const q = query(
-                logsRef,
-                where('campaignId', '==', campaignId),
-                orderBy('timestamp', 'desc'),
-                startAfter(lastDoc),
-                limit(LOGS_PER_PAGE)
-            );
-
-            const snapshot = await getDocs(q);
-            const newLogs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-            // Filtrar por groupId
-            const filteredNewLogs = newLogs.filter(log => log.groupId === selectedGroupId || !log.groupId);
-
-            setMyLogs(prev => [...prev, ...filteredNewLogs]);
-            setLastDoc(snapshot.docs[snapshot.docs.length - 1] || null);
-            setHasMore(snapshot.docs.length === LOGS_PER_PAGE);
-        } catch (error) {
-            console.error('Error loading more logs:', error);
-        } finally {
-            setLoadingMore(false);
-        }
-    }, [lastDoc, loadingMore, hasMore, campaignId, selectedGroupId, getLogsRef]);
+    // Verificar si hay más logs para mostrar
+    const hasMoreLogs = visibleCount < allTeamLogs.length;
 
     // Logs filtrados y ordenados
     const filteredAndSortedLogs = useMemo(() => {
@@ -436,9 +400,9 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, onResetRole }
                 <div className="px-5 space-y-4 animate-slideUp pb-12 pt-4">
                     <div className="flex justify-between items-center">
                         <h3 className="text-lg font-bold text-emerald-950">Cuaderno de Campo</h3>
-                        {!loadingLogs && totalLogsCount > 0 && (
+                        {!loadingLogs && allTeamLogs.length > 0 && (
                             <span className="text-xs font-bold text-emerald-800/50 bg-emerald-100 px-3 py-1 rounded-full">
-                                {myLogs.length} de {totalLogsCount} registros
+                                {myLogs.length} de {allTeamLogs.length} registros
                             </span>
                         )}
                     </div>
@@ -521,23 +485,13 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, onResetRole }
                             </div>
 
                             {/* Botón cargar más */}
-                            {hasMore && (
+                            {hasMoreLogs && (
                                 <button
                                     onClick={loadMoreLogs}
-                                    disabled={loadingMore}
-                                    className="w-full py-3 bg-emerald-100 text-emerald-700 rounded-2xl font-bold text-sm hover:bg-emerald-200 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                                    className="w-full py-3 bg-emerald-100 text-emerald-700 rounded-2xl font-bold text-sm hover:bg-emerald-200 transition-colors flex items-center justify-center gap-2"
                                 >
-                                    {loadingMore ? (
-                                        <>
-                                            <div className="w-4 h-4 border-2 border-emerald-300 border-t-emerald-600 rounded-full animate-spin"></div>
-                                            Cargando...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <ChevronDown size={16} />
-                                            Cargar más
-                                        </>
-                                    )}
+                                    <ChevronDown size={16} />
+                                    Cargar más ({allTeamLogs.length - myLogs.length} restantes)
                                 </button>
                             )}
                         </>
