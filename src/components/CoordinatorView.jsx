@@ -336,18 +336,23 @@ const CoordinatorView = ({ db, appId, campaignId, seeds, groups, onResetRole }) 
     };
 
     const exportCSV = () => {
-        const headers = ["Fecha", "Jornada", "Equipo", "Especie", "Micrositio", "Lat", "Lng", "Golpes", "Notas"];
-        const rows = logs.map(log => [
-            log.timestamp?.seconds ? new Date(log.timestamp.seconds * 1000).toLocaleString() : '',
-            campaignId, // Using ID as name might need lookup if we want name
-            log.groupName,
-            log.seedName,
-            log.microsite,
-            log.location?.lat || '',
-            log.location?.lng || '',
-            log.holeCount || 1,
-            `"${log.notes || ''}"`
-        ]);
+        const headers = ["Fecha", "Hora", "Jornada", "Equipo", "Especie", "Micrositio", "Lat", "Lng", "Golpes", "Notas", "Foto URL"];
+        const rows = logs.map(log => {
+            const date = log.timestamp?.seconds ? new Date(log.timestamp.seconds * 1000) : null;
+            return [
+                date ? date.toLocaleDateString() : '',
+                date ? date.toLocaleTimeString() : '',
+                campaignId,
+                log.groupName,
+                log.seedName,
+                log.microsite,
+                log.location?.lat || '',
+                log.location?.lng || '',
+                log.holeCount || 1,
+                `"${(log.notes || '').replace(/"/g, '""')}"`, // Escape quotes
+                log.photo || log.photoUrl || ''
+            ];
+        });
 
         const csvContent = "data:text/csv;charset=utf-8,"
             + headers.join(",") + "\n"
