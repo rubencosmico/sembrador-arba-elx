@@ -463,7 +463,7 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
             </div>
 
             {view === 'form' && (
-                <div className="px-5 space-y-8 animate-slideUp pb-12">
+                <div className="px-3 md:px-5 space-y-8 animate-slideUp pb-12">
                     {editingLog && (
                         <div className="bg-amber-100 p-4 rounded-2xl flex items-center justify-between border border-amber-200 mb-4 animate-pulse">
                             <span className="text-amber-900 font-bold flex items-center gap-2">
@@ -494,19 +494,19 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
                     </section>
 
                     <div className="space-y-6">
-                        <section className="glass-card p-6 rounded-3xl shadow-sm border border-emerald-100/30 space-y-6">
+                        <section className="glass-card p-4 md:p-6 rounded-3xl shadow-sm border border-emerald-100/30 space-y-6">
                             {/* Hole Count / Batch Logging */}
-                            <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100">
+                            <div className="bg-amber-50 p-3 md:p-4 rounded-2xl border border-amber-100">
                                 <label className="text-[10px] font-bold text-amber-800/60 uppercase tracking-[0.2em] block mb-2">Cantidad de Golpes</label>
-                                <div className="flex items-center gap-4">
-                                    <button onClick={() => setFormData(p => ({ ...p, holeCount: Math.max(1, p.holeCount - 1) }))} className="w-12 h-12 bg-white rounded-xl shadow text-amber-600 font-bold text-xl">-</button>
+                                <div className="flex items-center gap-2 md:gap-4">
+                                    <button onClick={() => setFormData(p => ({ ...p, holeCount: Math.max(1, p.holeCount - 1) }))} className="w-10 h-10 md:w-12 md:h-12 bg-white rounded-xl shadow text-amber-600 font-bold text-xl">-</button>
                                     <input
                                         type="number"
-                                        className="flex-1 text-center text-3xl font-black bg-transparent outline-none text-emerald-950"
+                                        className="flex-1 text-center text-3xl font-black bg-transparent outline-none text-emerald-950 min-w-0"
                                         value={formData.holeCount}
                                         onChange={e => setFormData({ ...formData, holeCount: parseInt(e.target.value) || 1 })}
                                     />
-                                    <button onClick={() => setFormData(p => ({ ...p, holeCount: p.holeCount + 1 }))} className="w-12 h-12 bg-white rounded-xl shadow text-amber-600 font-bold text-xl">+</button>
+                                    <button onClick={() => setFormData(p => ({ ...p, holeCount: p.holeCount + 1 }))} className="w-10 h-10 md:w-12 md:h-12 bg-white rounded-xl shadow text-amber-600 font-bold text-xl">+</button>
                                 </div>
                                 <p className="text-center text-[10px] text-amber-800/40 mt-2 font-bold px-4">Usa esto si has hecho varios hoyos en el mismo punto.</p>
                             </div>
