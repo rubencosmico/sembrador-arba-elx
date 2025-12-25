@@ -1,15 +1,19 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { addDoc, collection, serverTimestamp, query, orderBy, where, getDocs, limit } from 'firebase/firestore';
+import { addDoc, updateDoc, doc, collection, serverTimestamp, query, orderBy, where, getDocs, limit, onSnapshot } from 'firebase/firestore';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import {
     Users, LogOut, ArrowRight, AlertTriangle, PlusCircle, History,
     Leaf, Check, Compass, Shield, MapPin, Camera, X, Save,
-    Search, ChevronDown, ChevronUp
+    Search, ChevronDown, ChevronUp, HelpCircle, Pencil
 } from 'lucide-react';
+import ManualView from './ManualView';
 
 const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onResetRole }) => {
     const [selectedGroupId, setSelectedGroupId] = useState(null);
+    const [groupStats, setGroupStats] = useState({});
+    const [showManual, setShowManual] = useState(false);
     const [view, setView] = useState('form');
+    const [editingLog, setEditingLog] = useState(null);
     const [formData, setFormData] = useState({
         seedId: '',
         microsite: 'Nodriza Viva',
@@ -26,6 +30,7 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
     const [loadingLogs, setLoadingLogs] = useState(false);
     const [gpsStatus, setGpsStatus] = useState('waiting');
     const [currentLocation, setCurrentLocation] = useState({ lat: null, lng: null, acc: null });
+    const [viewImage, setViewImage] = useState(null);
 
     // Estados para el cuaderno de campo con paginación
     const [searchTerm, setSearchTerm] = useState('');
@@ -37,6 +42,32 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
     const [currentPage, setCurrentPage] = useState(1);
     const [logsPerPage, setLogsPerPage] = useState(10);
     const PAGE_SIZE_OPTIONS = [5, 10, 20, 50];
+
+    // Efecto para cargar estadísticas de grupos
+    useEffect(() => {
+        if (selectedGroupId || !campaignId) return;
+
+        const q = query(
+            collection(db, 'artifacts', appId, 'public', 'data', 'logs'),
+            where('campaignId', '==', campaignId)
+        );
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const stats = {};
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                const gid = data.groupId;
+                const count = typeof data.holeCount === 'number' ? data.holeCount : 1;
+
+                if (gid) {
+                    stats[gid] = (stats[gid] || 0) + count;
+                }
+            });
+            setGroupStats(stats);
+        });
+
+        return () => unsubscribe();
+    }, [campaignId, db, appId, selectedGroupId]);
 
     // Total de golpes del equipo
     const totalTeamHoles = useMemo(() => {
@@ -136,6 +167,49 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
         }
     };
 
+    const startEditing = (log) => {
+        setEditingLog(log);
+        setFormData({
+            seedId: log.seedId,
+            microsite: log.microsite || 'Nodriza Viva',
+            orientation: log.orientation || 'Norte',
+            withSubstrate: log.withSubstrate || false,
+            withProtector: log.withProtector || false,
+            quantity: String(log.quantity || '1'),
+            holeCount: log.holeCount || 1,
+            notes: log.notes || '',
+            photo: null
+        });
+
+        if (log.location && log.location.lat) {
+            setCurrentLocation(log.location);
+            setGpsStatus('success');
+        } else {
+            setCurrentLocation({ lat: null, lng: null, acc: null });
+            setGpsStatus('waiting');
+        }
+
+        setView('form');
+    };
+
+    const cancelEditing = () => {
+        setEditingLog(null);
+        setFormData({
+            seedId: '',
+            microsite: 'Nodriza Viva',
+            orientation: 'Norte',
+            withSubstrate: true,
+            withProtector: false,
+            quantity: '1',
+            holeCount: 1,
+            notes: '',
+            photo: null
+        });
+        setCurrentLocation({ lat: null, lng: null, acc: null });
+        setGpsStatus('waiting');
+        setView('history');
+    };
+
     const captureGPS = async () => {
         if (!("geolocation" in navigator)) return;
         setGpsStatus('searching');
@@ -185,9 +259,9 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
 
         try {
             const selectedGroup = groups.find(g => g.id === selectedGroupId);
+            const seedName = seeds.find(s => s.id === formData.seedId)?.species || 'Desconocida';
 
-            // Preparar datos del log (sin foto por ahora)
-            const logData = {
+            const commonData = {
                 seedId: formData.seedId,
                 microsite: formData.microsite,
                 orientation: formData.orientation,
@@ -196,29 +270,54 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
                 quantity: formData.quantity,
                 holeCount: parseInt(formData.holeCount) || 1,
                 notes: formData.notes,
-                campaignId,
-                groupId: selectedGroupId,
-                groupName: selectedGroup?.name || 'Desconocido',
-                userId,
                 location,
-                timestamp: serverTimestamp(),
-                seedName: seeds.find(s => s.id === formData.seedId)?.species || 'Desconocida'
+                seedName
             };
 
-            // Si hay foto, subirla a Storage
-            if (formData.photo && storage) {
-                const logId = `${Date.now()}_${userId}_${Math.random().toString(36).substr(2, 9)}`;
-                const photoRef = ref(storage, `photos/logs/${logId}.jpg`);
-                await uploadString(photoRef, formData.photo, 'data_url');
-                const photoUrl = await getDownloadURL(photoRef);
-                logData.photoUrl = photoUrl;
+            if (editingLog) {
+                // UPDATE EXISTING LOG
+                let photoUrl = editingLog.photoUrl;
+                if (formData.photo && storage) {
+                    const logId = editingLog.id; // Keep same ID for photo path logic usually, or new. Let's use new path to avoid cache issues or complexities.
+                    const photoRef = ref(storage, `photos/logs/${logId}_${Date.now()}.jpg`);
+                    await uploadString(photoRef, formData.photo, 'data_url');
+                    photoUrl = await getDownloadURL(photoRef);
+                }
+
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'logs', editingLog.id);
+                await updateDoc(docRef, {
+                    ...commonData,
+                    photoUrl,
+                    updatedAt: serverTimestamp()
+                    // Don't update campaignId, groupId, userId, original timestamp
+                });
+
+                // Update local state to reflect change immediately if in list (optional, fetchLogs handles it usually but may delay)
+                setAllTeamLogs(prev => prev.map(l => l.id === editingLog.id ? { ...l, ...commonData, photoUrl } : l));
+
+            } else {
+                // CREATE NEW LOG
+                const logData = {
+                    ...commonData,
+                    campaignId,
+                    groupId: selectedGroupId,
+                    groupName: selectedGroup?.name || 'Desconocido',
+                    userId,
+                    timestamp: serverTimestamp(),
+                };
+
+                if (formData.photo && storage) {
+                    const logId = `${Date.now()}_${userId}_${Math.random().toString(36).substr(2, 9)}`;
+                    const photoRef = ref(storage, `photos/logs/${logId}.jpg`);
+                    await uploadString(photoRef, formData.photo, 'data_url');
+                    const photoUrl = await getDownloadURL(photoRef);
+                    logData.photoUrl = photoUrl;
+                }
+
+                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'logs'), logData);
             }
 
-            await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'logs'), logData);
-
-            setFormData(prev => ({ ...prev, quantity: 1, holeCount: 1, notes: '', photo: null }));
-            setCurrentLocation({ lat: null, lng: null, acc: null });
-            setGpsStatus('waiting');
+            cancelEditing(); // Resets form and clears editingLog
             if (window.navigator && window.navigator.vibrate) window.navigator.vibrate(200);
         } catch (error) {
             console.error('Error guardando:', error);
@@ -285,14 +384,29 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
                             onClick={() => setSelectedGroupId(group.id)}
                             className="btn-premium group relative bg-white border border-emerald-100 p-6 rounded-3xl flex items-center gap-4 hover:shadow-2xl hover:border-emerald-500 transition-all active:scale-[0.98]"
                         >
-                            <div className="w-14 h-14 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-all shadow-inner">
+                            <div className="w-14 h-14 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-all shadow-inner relative">
                                 <Users size={24} />
+                                {(groupStats[group.id] || 0) > 0 && (
+                                    <div className="absolute -top-2 -right-2 bg-amber-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-md border-2 border-white">
+                                        {groupStats[group.id]}
+                                    </div>
+                                )}
                             </div>
                             <div className="flex-1 text-left">
                                 <div className="text-xl font-extrabold text-emerald-950 group-hover:text-emerald-700 transition-colors">{group.name}</div>
-                                <div className="text-emerald-800/40 text-xs font-bold uppercase tracking-widest mt-0.5 flex items-center gap-1.5">
-                                    <Leaf size={12} className="text-emerald-400" />
-                                    {group.assignedSeeds?.length || 0} Variedades
+                                <div className="flex items-center gap-3 mt-1">
+                                    <div className="text-emerald-800/40 text-xs font-bold uppercase tracking-widest flex items-center gap-1.5">
+                                        <Leaf size={12} className="text-emerald-400" />
+                                        {group.assignedSeeds?.length || 0} Variedades
+                                    </div>
+                                    {(groupStats[group.id] || 0) > 0 && (
+                                        <>
+                                            <div className="w-1 h-1 bg-emerald-200 rounded-full"></div>
+                                            <div className="text-emerald-600 text-xs font-bold uppercase tracking-widest">
+                                                {groupStats[group.id] || 0} Golpes
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
                             </div>
                             <ArrowRight className="text-emerald-100 group-hover:text-emerald-500 transition-colors" size={24} />
@@ -309,12 +423,19 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
         );
     }
 
+    if (showManual) {
+        return <ManualView onBack={() => setShowManual(false)} />;
+    }
+
     return (
         <div className="min-h-screen bg-[#f1f5f0] pb-28 font-sans">
             <header className="glass-card sticky top-0 z-30 px-6 py-4 flex justify-between items-end border-b border-amber-100/50">
                 <div className="flex gap-4 items-end">
                     <button onClick={() => setSelectedGroupId(null)} className="mb-1 text-emerald-950/30 hover:text-emerald-950/60 transition-colors">
                         <LogOut size={20} />
+                    </button>
+                    <button onClick={() => setShowManual(true)} className="mb-1 text-emerald-950/30 hover:text-emerald-950/60 transition-colors">
+                        <HelpCircle size={20} />
                     </button>
                     <div>
                         <div className="flex items-center gap-1.5 mb-0.5">
@@ -343,6 +464,16 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
 
             {view === 'form' && (
                 <div className="px-5 space-y-8 animate-slideUp pb-12">
+                    {editingLog && (
+                        <div className="bg-amber-100 p-4 rounded-2xl flex items-center justify-between border border-amber-200 mb-4 animate-pulse">
+                            <span className="text-amber-900 font-bold flex items-center gap-2">
+                                <Pencil size={18} /> Editando registro
+                            </span>
+                            <button onClick={cancelEditing} className="bg-white px-3 py-1.5 rounded-lg text-xs font-bold text-amber-900 shadow-sm">
+                                Cancelar
+                            </button>
+                        </div>
+                    )}
                     <section className="mt-4">
                         <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-[0.2em] block mb-3 px-1">1. ¿Qué estás sembrando?</label>
                         <div className="grid gap-3">
@@ -446,25 +577,37 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
                                 {gpsStatus === 'success' && <Check size={20} />}
                             </button>
 
-                            {/* Photo (omitted logic for brevity, keeping UI) */}
                             <div className="pt-2">
                                 <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-[0.2em] block mb-3 px-1">Foto (Opcional)</label>
-                                {!formData.photo ? (
-                                    <label className="w-full flex items-center justify-center p-6 border-2 border-dashed border-emerald-100 rounded-2xl cursor-pointer">
+                                {!formData.photo && !editingLog?.photoUrl ? (
+                                    <label className="w-full flex items-center justify-center p-6 border-2 border-dashed border-emerald-100 rounded-2xl cursor-pointer hover:bg-emerald-50 transition-colors">
                                         <Camera size={24} className="text-emerald-300" />
                                         <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoChange} />
                                     </label>
                                 ) : (
-                                    <div className="relative h-32 rounded-xl overflow-hidden">
-                                        <img src={formData.photo} className="w-full h-full object-cover" />
-                                        <button onClick={() => setFormData({ ...formData, photo: null })} className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full"><X size={14} /></button>
+                                    <div className="relative h-40 rounded-xl overflow-hidden bg-black/5">
+                                        <img src={formData.photo || editingLog?.photoUrl} className="w-full h-full object-contain" alt="Evidencia" />
+                                        <div className="absolute top-2 right-2 flex gap-2">
+                                            <label className="bg-black/50 text-white p-2 rounded-full backdrop-blur-md cursor-pointer">
+                                                <Pencil size={14} />
+                                                <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoChange} />
+                                            </label>
+                                            <button onClick={() => setFormData({ ...formData, photo: null })} className="bg-red-500 text-white p-2 rounded-full shadow-lg">
+                                                <X size={14} />
+                                            </button>
+                                        </div>
+                                        {editingLog?.photoUrl && !formData.photo && (
+                                            <div className="absolute bottom-2 left-2 bg-black/50 text-white text-[10px] px-2 py-1 rounded backdrop-blur-md">
+                                                Foto actual
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
 
                             <button onClick={handleSow} disabled={isSubmitting} className="btn-premium w-full bg-emerald-700 hover:bg-emerald-800 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 mt-2">
                                 <Save size={18} />
-                                <span>{isSubmitting ? 'Guardando...' : 'Registrar Siembra'}</span>
+                                <span>{isSubmitting ? 'Guardando...' : editingLog ? 'Actualizar Registro' : 'Registrar Siembra'}</span>
                             </button>
                         </section>
                     </div>
@@ -564,14 +707,43 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
                             {/* Lista de registros */}
                             <div className="space-y-3">
                                 {paginatedLogs.map(log => (
-                                    <div key={log.id} className="glass-card p-4 rounded-2xl border border-emerald-100/30 flex justify-between items-center">
-                                        <div>
-                                            <div className="font-bold text-emerald-950 text-sm">{log.seedName}</div>
-                                            <div className="text-xs text-emerald-800/50">{log.microsite}</div>
+                                    <div key={log.id} className="glass-card p-4 rounded-2xl border border-emerald-100/30 flex justify-between items-center group">
+                                        <div className="flex-1">
+                                            <div className="font-bold text-emerald-950 text-sm flex items-center gap-2">
+                                                {log.seedName}
+                                                {log.notes && <span className="w-1.5 h-1.5 bg-amber-400 rounded-full"></span>}
+                                            </div>
+                                            <div className="text-xs text-emerald-800/50 flex items-center gap-2">
+                                                <span>{log.microsite}</span>
+                                                <span className="text-emerald-200">•</span>
+                                                <span>{new Date(log.timestamp?.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                            </div>
                                         </div>
-                                        <div className="text-right">
-                                            <div className="font-black text-emerald-700 text-lg">{log.holeCount || 1}</div>
-                                            <div className="text-[9px] font-bold text-emerald-800/30 uppercase">Golpes</div>
+                                        <div className="flex items-center gap-3">
+                                            <div className="text-right">
+                                                <div className="font-black text-emerald-700 text-lg">{log.holeCount || 1}</div>
+                                                <div className="text-[9px] font-bold text-emerald-800/30 uppercase">Golpes</div>
+                                            </div>
+
+                                            {log.photoUrl && (
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); setViewImage(log.photoUrl); }}
+                                                    className="w-10 h-10 bg-emerald-100/50 rounded-xl flex items-center justify-center text-emerald-600 hover:bg-emerald-200 transition-colors"
+                                                >
+                                                    <Camera size={16} />
+                                                </button>
+                                            )}
+
+                                            <button
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    startEditing(log);
+                                                }}
+                                                className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600 hover:bg-emerald-100 active:scale-95 transition-all cursor-pointer relative z-10"
+                                            >
+                                                <Pencil size={16} />
+                                            </button>
                                         </div>
                                     </div>
                                 ))}
@@ -627,6 +799,15 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
                             )}
                         </>
                     )}
+                </div>
+            )}
+
+            {viewImage && (
+                <div className="fixed inset-0 z-[60] bg-black flex items-center justify-center p-4 animate-fadeIn" onClick={() => setViewImage(null)}>
+                    <button onClick={() => setViewImage(null)} className="absolute top-4 right-4 text-white bg-white/20 p-2 rounded-full backdrop-blur-md">
+                        <X size={24} />
+                    </button>
+                    <img src={viewImage} className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" />
                 </div>
             )}
         </div>
