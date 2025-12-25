@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Informe Digital: Jornada de Siembra ARBA Elx</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+
+    <!-- Chosen Palette: Nature & Earth -->
+    <!-- Primary: #15803d (Green 700) - Representation of Biology/Growth -->
+    <!-- Secondary: #b45309 (Amber 700) - Earth/Soil/Forestry -->
+    <!-- Accent: #0369a1 (Sky 700) - Water/Hydropriming/Data -->
+    <!-- Background: #f8fafc (Slate 50) - Clean, professional interface -->
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+        }
+
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 300px;
+            max-height: 400px;
+        }
+
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 350px;
+            }
+        }
+
+        .card-hover:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+
+        .active-nav {
+            background-color: #dcfce7;
+            /* green-100 */
+            color: #15803d;
+            /* green-700 */
+            border-left: 4px solid #15803d;
+        }
+
+        .inactive-nav {
+            border-left: 4px solid transparent;
+            color: #64748b;
+        }
+
+        .inactive-nav:hover {
+            background-color: #f1f5f9;
+            color: #334155;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+
+    <!-- Application Structure Plan:
+         1. Sidebar Navigation: Allows switching between the 4 professional profiles (Bio, Forestry, GIS, Data) and a Summary View.
+         2. Main Content Area: Dynamic injection of content based on selection.
+            - Dashboard: High-level metrics (Total seeds, main issues).
+            - Biologist View: Focus on Treatments and Species survival logic.
+            - Engineer View: Focus on Seed Density and Stock management.
+            - GIS View: Focus on Orientation and Vulnerability mapping.
+            - Data Analyst View: Focus on Data Quality and Errors.
+         3. Action Plan Footer: Summary of recommendations.
+         Rationale: The report is multidisciplinary. A tabbed/dashboard approach allows the user to "put on the hat" of each expert to understand that specific slice of the data.
+    -->
+
+    <!-- Visualization & Content Choices:
+         1. Doughnut Chart (Dashboard): Quick view of Species composition. Goal: Inform.
+         2. Stacked Bar Chart (Biologist): Species vs. Treatment. Goal: Relationships (Show correct treatment application).
+         3. Polar Area Chart (GIS): Orientation distribution. Goal: Compare (Show avoidance of South).
+         4. Gauge/Progress Bar (Engineer): Seeds/Hole metric (1.25 vs Target 3). Goal: Compare/Alert.
+         5. "Before/After" Bar Chart (Data): Raw vs Cleaned data labels. Goal: Inform about data quality.
+         NO SVG or Mermaid used. All charts via Chart.js.
+    -->
+
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+</head>
+
+<body class="flex h-screen overflow-hidden text-slate-800">
+
+    <!-- Sidebar Navigation -->
+    <aside class="w-64 bg-white border-r border-slate-200 hidden md:flex flex-col shadow-sm z-10">
+        <div class="p-6 border-b border-slate-100">
+            <h1 class="text-xl font-bold text-green-800 flex items-center gap-2">
+                <i class="fa-solid fa-seedling"></i> ARBA Elx
+            </h1>
+            <p class="text-xs text-slate-500 mt-1">Informe de Siembra Digital</p>
+            <p class="text-xs text-slate-400">20 Dic 2025</p>
+        </div>
+
+        <nav class="flex-1 overflow-y-auto py-4">
+            <ul class="space-y-1">
+                <li>
+                    <button onclick="navigate('dashboard')" id="nav-dashboard"
+                        class="w-full text-left px-6 py-3 font-medium text-sm transition-all active-nav flex items-center gap-3">
+                        <i class="fa-solid fa-chart-pie w-5"></i> Resumen Global
+                    </button>
+                </li>
+                <li class="pt-4 pb-2 px-6 text-xs font-bold text-slate-400 uppercase tracking-wider">Perfiles Técnicos
+                </li>
+                <li>
+                    <button onclick="navigate('bio')" id="nav-bio"
+                        class="w-full text-left px-6 py-3 font-medium text-sm transition-all inactive-nav flex items-center gap-3">
+                        <i class="fa-solid fa-leaf w-5"></i> Biólogo / Ambientólogo
+                    </button>
+                </li>
+                <li>
+                    <button onclick="navigate('forest')" id="nav-forest"
+                        class="w-full text-left px-6 py-3 font-medium text-sm transition-all inactive-nav flex items-center gap-3">
+                        <i class="fa-solid fa-trowel w-5"></i> Ing. Forestal
+                    </button>
+                </li>
+                <li>
+                    <button onclick="navigate('gis')" id="nav-gis"
+                        class="w-full text-left px-6 py-3 font-medium text-sm transition-all inactive-nav flex items-center gap-3">
+                        <i class="fa-regular fa-map w-5"></i> Especialista SIG
+                    </button>
+                </li>
+                <li>
+                    <button onclick="navigate('data')" id="nav-data"
+                        class="w-full text-left px-6 py-3 font-medium text-sm transition-all inactive-nav flex items-center gap-3">
+                        <i class="fa-solid fa-database w-5"></i> Analista de Datos
+                    </button>
+                </li>
+            </ul>
+        </nav>
+
+        <div class="p-4 border-t border-slate-100 bg-slate-50">
+            <div class="flex items-center gap-3">
+                <div
+                    class="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-700 font-bold text-xs">
+                    A</div>
+                <div>
+                    <p class="text-sm font-medium text-slate-700">Admin ARBA</p>
+                    <p class="text-xs text-slate-500">Solo lectura</p>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Mobile Header -->
+    <div
+        class="md:hidden fixed top-0 w-full bg-white z-20 border-b border-slate-200 px-4 py-3 flex justify-between items-center">
+        <h1 class="font-bold text-green-800"><i class="fa-solid fa-seedling"></i> ARBA Elx</h1>
+        <button onclick="toggleMobileMenu()" class="text-slate-600 focus:outline-none">
+            <i class="fa-solid fa-bars text-xl"></i>
+        </button>
+    </div>
+
+    <!-- Mobile Menu Overlay -->
+    <div id="mobile-menu" class="fixed inset-0 bg-black bg-opacity-50 z-30 hidden md:hidden"
+        onclick="toggleMobileMenu()">
+        <div class="bg-white w-64 h-full shadow-lg p-4" onclick="event.stopPropagation()">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="font-bold text-lg">Menú</h2>
+                <button onclick="toggleMobileMenu()"><i class="fa-solid fa-times"></i></button>
+            </div>
+            <ul class="space-y-2">
+                <li><button onclick="navigate('dashboard'); toggleMobileMenu()"
+                        class="block py-2 w-full text-left border-b">Resumen Global</button></li>
+                <li><button onclick="navigate('bio'); toggleMobileMenu()"
+                        class="block py-2 w-full text-left border-b">Biólogo</button></li>
+                <li><button onclick="navigate('forest'); toggleMobileMenu()"
+                        class="block py-2 w-full text-left border-b">Ingeniero Forestal</button></li>
+                <li><button onclick="navigate('gis'); toggleMobileMenu()"
+                        class="block py-2 w-full text-left border-b">Especialista SIG</button></li>
+                <li><button onclick="navigate('data'); toggleMobileMenu()"
+                        class="block py-2 w-full text-left border-b">Analista de Datos</button></li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col h-full overflow-hidden relative pt-14 md:pt-0">
+        <!-- Content Container -->
+        <div id="content-area" class="flex-1 overflow-y-auto p-4 md:p-8 space-y-8 pb-20">
+            <!-- Content will be injected here via JS -->
+        </div>
+
+        <!-- Sticky Bottom Action Bar -->
+        <div
+            class="bg-white border-t border-slate-200 p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-10 flex justify-between items-center">
+            <div class="hidden md:block">
+                <p class="text-xs text-slate-500 uppercase font-bold tracking-wider">Estado del Informe</p>
+                <p class="text-sm font-semibold text-green-700">Estrategia Validada</p>
+            </div>
+            <button onclick="showActionPlan()"
+                class="bg-green-700 hover:bg-green-800 text-white px-6 py-2 rounded-lg shadow-md transition-colors text-sm font-medium flex items-center gap-2">
+                <i class="fa-solid fa-list-check"></i> Ver Plan de Acción
+            </button>
+        </div>
+    </main>
+
+    <!-- Modal for Action Plan -->
+    <div id="action-modal"
+        class="fixed inset-0 bg-black bg-opacity-60 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div class="p-6 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white">
+                <h3 class="text-xl font-bold text-slate-800">Plan de Acción (Futuras Mejoras)</h3>
+                <button onclick="closeActionModal()" class="text-slate-400 hover:text-slate-600">
+                    <i class="fa-solid fa-times text-xl"></i>
+                </button>
+            </div>
+            <div class="p-6 space-y-6">
+
+                <!-- Priority High -->
+                <div class="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-lg">
+                    <div class="flex items-start gap-3">
+                        <div class="text-amber-600 mt-1"><i class="fa-solid fa-mobile-screen-button"></i></div>
+                        <div>
+                            <h4 class="font-bold text-amber-800">Mejora de la App (Gestión de Lotes)</h4>
+                            <p class="text-sm text-amber-700 mt-1">Implementar asignación automática de tratamientos a
+                                lotes de semillas. <strong>Objetivo:</strong> Eliminar la entrada manual de texto y
+                                errores como "Hidroprimig".</p>
+                            <div class="mt-2 text-xs font-mono bg-white bg-opacity-50 p-1 rounded inline-block">
+                                Responsable: Desarrollo TI / Datos</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Priority Medium -->
+                <div class="bg-green-50 border-l-4 border-green-500 p-4 rounded-r-lg">
+                    <div class="flex items-start gap-3">
+                        <div class="text-green-600 mt-1"><i class="fa-solid fa-eye"></i></div>
+                        <div>
+                            <h4 class="font-bold text-green-800">Monitorización de Metodología</h4>
+                            <p class="text-sm text-green-700 mt-1">Realizar seguimiento de supervivencia en los puntos
+                                sin riego (especialmente Encinas) para validar la hipótesis de autosuficiencia basada en
+                                pregerminación y micrositio.</p>
+                            <div class="mt-2 text-xs font-mono bg-white bg-opacity-50 p-1 rounded inline-block">
+                                Responsable: Equipo de Mantenimiento / SIG</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Priority Info -->
+                <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg">
+                    <div class="flex items-start gap-3">
+                        <div class="text-blue-600 mt-1"><i class="fa-solid fa-clipboard-check"></i></div>
+                        <div>
+                            <h4 class="font-bold text-blue-800">Validación de Estrategia de Siembra</h4>
+                            <p class="text-sm text-blue-700 mt-1">Confirmar en primavera si la estrategia de "baja
+                                densidad (1 semilla) + alta cobertura" fue exitosa gracias a las lluvias acumuladas
+                                (40-50L).</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="text-center pt-4">
+                    <button onclick="closeActionModal()"
+                        class="text-slate-500 hover:text-slate-800 text-sm underline">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        // --- DATA STORAGE ---
+        // Based on the V4 Updates
+        const reportData = {
+            totals: {
+                seeds: 379,
+                species_count: 6,
+                avg_seeds_hole: 1.25,
+                target_seeds_hole: "Variable" // Changed from fixed target
+            },
+            species: {
+                labels: ['Algarrobo', 'Tetraclinis', 'Bolina', 'Azofaifo', 'Encina', 'Coscoja'],
+                data: [126, 118, 71, 38, 22, 4],
+                colors: ['#3f6212', '#15803d', '#a3e635', '#fcd34d', '#854d0e', '#78350f'] // Varied greens/browns
+            },
+            treatments: {
+                // Aggregated data correcting typos
+                labels: ['Hidropriming (72h/Std)', 'Pregerminado (Fase 2)'],
+                data: [344, 26], // 192+126+38(AO) approx for Hydro, 22+4 for Pregerm
+                breakdown: {
+                    'Algarrobo': 'Hidropriming',
+                    'Tetraclinis': 'Hidropriming',
+                    'Bolina': 'Hidropriming',
+                    'Azofaifo': 'Hidropriming',
+                    'Encina': 'Pregerminado',
+                    'Coscoja': 'Pregerminado'
+                }
+            },
+            orientation: {
+                labels: ['Norte', 'Este', 'Sur', 'Oeste'],
+                data: [29.7, 39.4, 2.4, 28.5], // Percentages
+                colors: ['#0ea5e9', '#22c55e', '#ef4444', '#f59e0b'] // Blue (Cool), Green (Morning), Red (Hot/Bad), Orange (Afternoon)
+            },
+            dataQuality: {
+                errors: {
+                    'Coordenadas Nulas': 37,
+                    'Errata Tratamiento': 126, // "Hidroprimig"
+                    'Nota Compleja': 37 // AO notes
+                }
+            }
+        };
+
+        // --- NAVIGATION & STATE ---
+        let currentView = 'dashboard';
+        let charts = {}; // Store chart instances
+
+        function navigate(viewId) {
+            // Update State
+            currentView = viewId;
+
+            // Update Sidebar UI
+            document.querySelectorAll('nav button').forEach(btn => {
+                btn.classList.remove('active-nav');
+                btn.classList.add('inactive-nav');
+            });
+            const activeBtn = document.getElementById(`nav-${viewId}`);
+            if (activeBtn) {
+                activeBtn.classList.remove('inactive-nav');
+                activeBtn.classList.add('active-nav');
+            }
+
+            // Render Content
+            const contentDiv = document.getElementById('content-area');
+            contentDiv.innerHTML = ''; // Clear current
+
+            // Inject new content based on view
+            switch (viewId) {
+                case 'dashboard': renderDashboard(contentDiv); break;
+                case 'bio': renderBio(contentDiv); break;
+                case 'forest': renderForest(contentDiv); break;
+                case 'gis': renderGIS(contentDiv); break;
+                case 'data': renderData(contentDiv); break;
+            }
+        }
+
+        // --- RENDER FUNCTIONS ---
+
+        function renderDashboard(container) {
+            container.innerHTML = `
+                <div class="mb-6">
+                    <h2 class="text-2xl font-bold text-slate-800">Resumen Ejecutivo de la Jornada</h2>
+                    <p class="text-slate-600">Visión global de los resultados del 20/12/2025.</p>
+                </div>
+
+                <!-- KPI Cards -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex flex-col justify-between h-32 card-hover">
+                        <div class="text-slate-500 text-sm font-medium">Total Semillas</div>
+                        <div class="text-4xl font-bold text-green-700">${reportData.totals.seeds}</div>
+                        <div class="text-xs text-green-600 flex items-center gap-1"><i class="fa-solid fa-check-circle"></i> Datos auditados</div>
+                    </div>
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex flex-col justify-between h-32 card-hover">
+                        <div class="text-slate-500 text-sm font-medium">Diversidad</div>
+                        <div class="text-4xl font-bold text-slate-700">${reportData.totals.species_count} <span class="text-lg font-normal text-slate-400">Especies</span></div>
+                        <div class="text-xs text-slate-500">Algarrobo y Tetraclinis dominantes</div>
+                    </div>
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex flex-col justify-between h-32 card-hover border-l-4 border-l-blue-500">
+                        <div class="text-slate-500 text-sm font-medium">Estrategia</div>
+                        <div class="text-4xl font-bold text-blue-600">Expansiva</div>
+                        <div class="text-xs text-blue-500 font-bold"><i class="fa-solid fa-arrows-left-right-to-line"></i> Alta Cobertura</div>
+                    </div>
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex flex-col justify-between h-32 card-hover border-l-4 border-l-green-500">
+                        <div class="text-slate-500 text-sm font-medium">Tecnificación</div>
+                        <div class="text-4xl font-bold text-green-600">100%</div>
+                        <div class="text-xs text-green-500">Tratamiento previo avanzado</div>
+                    </div>
+                </div>
+
+                <!-- Charts Section -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                        <h3 class="font-bold text-slate-700 mb-4">Composición de Especies</h3>
+                        <div class="chart-container">
+                            <canvas id="dashboardSpeciesChart"></canvas>
+                        </div>
+                        <p class="text-sm text-slate-500 mt-4 italic text-center">Dominancia clara de especies arbóreas resistentes.</p>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex flex-col justify-center">
+                        <h3 class="font-bold text-slate-700 mb-4">Puntos Clave del Informe (V4)</h3>
+                        <ul class="space-y-4">
+                            <li class="flex gap-3">
+                                <div class="bg-green-100 text-green-700 w-8 h-8 rounded-full flex items-center justify-center shrink-0"><i class="fa-solid fa-cloud-showers-heavy"></i></div>
+                                <div>
+                                    <h4 class="font-bold text-sm">Oportunidad Climática</h4>
+                                    <p class="text-xs text-slate-600">Siembra realizada tras 40-50L acumulados y previsión de lluvias. Condiciones óptimas.</p>
+                                </div>
+                            </li>
+                            <li class="flex gap-3">
+                                <div class="bg-blue-100 text-blue-700 w-8 h-8 rounded-full flex items-center justify-center shrink-0"><i class="fa-solid fa-expand"></i></div>
+                                <div>
+                                    <h4 class="font-bold text-sm">Estrategia de Cobertura</h4>
+                                    <p class="text-xs text-slate-600">Decisión deliberada de usar 1 semilla/golpe para maximizar el área, confiando en la alta viabilidad del tratamiento.</p>
+                                </div>
+                            </li>
+                            <li class="flex gap-3">
+                                <div class="bg-amber-100 text-amber-700 w-8 h-8 rounded-full flex items-center justify-center shrink-0"><i class="fa-solid fa-hand-holding-droplet"></i></div>
+                                <div>
+                                    <h4 class="font-bold text-sm">Metodología Autosuficiente</h4>
+                                    <p class="text-xs text-slate-600">Sin riego de socorro planificado. Se busca seleccionar individuos capaces de progresar por sí mismos.</p>
+                                </div>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            `;
+
+            // Init Chart
+            initDashboardChart();
+        }
+
+        function renderBio(container) {
+            container.innerHTML = `
+                <div class="mb-6 border-b border-slate-200 pb-4">
+                    <div class="flex items-center gap-2 text-green-700 mb-1">
+                        <i class="fa-solid fa-leaf"></i> <span class="font-bold uppercase text-xs tracking-wider">Perfil: Biólogo</span>
+                    </div>
+                    <h2 class="text-2xl font-bold text-slate-800">Análisis Fisiológico y de Tratamientos</h2>
+                    <p class="text-slate-600 mt-2">Evaluación de la preparación del germoplasma y su adecuación a las especies.</p>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <!-- Text Insight -->
+                    <div class="lg:col-span-1 space-y-4">
+                        <div class="bg-blue-50 p-4 rounded-lg border border-blue-100">
+                            <h3 class="font-bold text-blue-800 mb-2">Estrategia: Hidropriming</h3>
+                            <p class="text-sm text-blue-700">El 84% de las semillas (*Tetraclinis, Algarrobo*) recibieron hidratación controlada (72h). Combinado con las lluvias recientes, esto maximiza la probabilidad de establecimiento temprano.</p>
+                        </div>
+                        <div class="bg-green-50 p-4 rounded-lg border border-green-100">
+                            <h3 class="font-bold text-green-800 mb-2">Detalle: Pregerminados (Fase 2)</h3>
+                            <p class="text-sm text-green-700">Las *Encinas* y *Coscojas* se llevaron a un punto de humedad óptimo (Fase 2) <span class="font-bold">sin emisión visible de radícula</span>. Esto facilitó su manejo en campo sin el riesgo de dañar raíces emergentes, manteniendo el vigor germinativo.</p>
+                        </div>
+                    </div>
+
+                    <!-- Chart -->
+                    <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                        <h3 class="font-bold text-slate-700 mb-4">Relación Especie - Tratamiento</h3>
+                        <div class="chart-container">
+                            <canvas id="bioChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            `;
+            initBioChart();
+        }
+
+        function renderForest(container) {
+            container.innerHTML = `
+                <div class="mb-6 border-b border-slate-200 pb-4">
+                    <div class="flex items-center gap-2 text-amber-700 mb-1">
+                        <i class="fa-solid fa-trowel"></i> <span class="font-bold uppercase text-xs tracking-wider">Perfil: Ingeniero Forestal</span>
+                    </div>
+                    <h2 class="text-2xl font-bold text-slate-800">Estrategia y Logística</h2>
+                    <p class="text-slate-600 mt-2">Análisis de la estrategia de siembra y optimización de recursos.</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+                    <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                        <h3 class="font-bold text-slate-700 mb-6">Optimización de Golpes</h3>
+                        
+                        <div class="flex items-center gap-4 mb-4">
+                            <div class="bg-blue-100 p-3 rounded-full text-blue-600">
+                                <i class="fa-solid fa-chart-simple text-xl"></i>
+                            </div>
+                            <div>
+                                <h4 class="font-bold text-lg">Estrategia de Maximización</h4>
+                                <p class="text-sm text-slate-500">Prioridad: Cantidad de Puntos vs Densidad</p>
+                            </div>
+                        </div>
+
+                        <div class="mt-4 text-sm text-slate-600 space-y-3">
+                            <p><i class="fa-solid fa-check text-green-500"></i> <strong>Decisión Técnica:</strong> Ante la escasez de semilla tratada, se optó por sembrar 1 semilla/golpe para cubrir más terreno.</p>
+                            <p><i class="fa-solid fa-cloud-rain text-blue-500"></i> <strong>Factor Clave:</strong> La alta humedad edáfica (40-50L previos + previsión) justifica asumir este riesgo, confiando en una tasa de éxito inusualmente alta.</p>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                        <h3 class="font-bold text-slate-700 mb-4">Metodología "Sin Riego"</h3>
+                        <div class="flex items-center justify-center h-40 bg-slate-50 rounded-lg border border-dashed border-slate-300">
+                            <div class="text-center px-4">
+                                <div class="text-4xl text-slate-400 mb-2"><i class="fa-solid fa-ban"></i> <i class="fa-solid fa-faucet-drip"></i></div>
+                                <p class="text-slate-600 font-bold">Autosuficiencia</p>
+                                <p class="text-xs text-slate-500">Selección natural post-siembra</p>
+                            </div>
+                        </div>
+                        <p class="text-sm text-slate-600 mt-4">
+                            No se realizarán riegos de emergencia. El objetivo es establecer plantas adaptadas desde la germinación a las condiciones reales del sitio, aprovechando la ventana climática favorable.
+                        </p>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderGIS(container) {
+            container.innerHTML = `
+                <div class="mb-6 border-b border-slate-200 pb-4">
+                    <div class="flex items-center gap-2 text-blue-700 mb-1">
+                        <i class="fa-regular fa-map"></i> <span class="font-bold uppercase text-xs tracking-wider">Perfil: Especialista SIG</span>
+                    </div>
+                    <h2 class="text-2xl font-bold text-slate-800">Distribución Espacial</h2>
+                    <p class="text-slate-600 mt-2">Análisis de la orientación de las siembras y consistencia de datos.</p>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                        <h3 class="font-bold text-slate-700 mb-4 text-center">Distribución por Orientación</h3>
+                        <div class="chart-container">
+                            <canvas id="gisChart"></canvas>
+                        </div>
+                        <div class="mt-4 text-center text-sm text-slate-600">
+                            <span class="text-red-500 font-bold">2.4% Sur</span> vs <span class="text-blue-500 font-bold">29.7% Norte</span>
+                        </div>
+                    </div>
+                    
+                    <div class="space-y-6">
+                        <div class="bg-green-50 p-5 rounded-lg border border-green-100">
+                            <h3 class="font-bold text-green-800 mb-2"><i class="fa-solid fa-check"></i> Inteligencia "Micrositing"</h3>
+                            <p class="text-sm text-green-700">Los datos demuestran que los voluntarios evitaron activamente la orientación Sur (solana estricta). Esta selección de micrositio es la primera línea de defensa de la planta ante la ausencia de riego programado.</p>
+                        </div>
+
+                        <div class="bg-slate-50 p-5 rounded-lg border border-slate-200">
+                            <h3 class="font-bold text-slate-700 mb-2"><i class="fa-solid fa-eye-slash"></i> Puntos Ciegos</h3>
+                            <p class="text-sm text-slate-600 mb-2">El equipo "Aaron y Olivier" registró 144 semillas (Azofaifo/Bolina) pero sus coordenadas son nulas o repetidas.</p>
+                            <div class="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                                <div class="bg-slate-400 h-full" style="width: 38%"></div>
+                            </div>
+                            <p class="text-xs text-slate-500 mt-1">38% de las semillas no son localizables en mapa.</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+            initGISChart();
+        }
+
+        function renderData(container) {
+            container.innerHTML = `
+                <div class="mb-6 border-b border-slate-200 pb-4">
+                    <div class="flex items-center gap-2 text-purple-700 mb-1">
+                        <i class="fa-solid fa-database"></i> <span class="font-bold uppercase text-xs tracking-wider">Perfil: Analista de Datos</span>
+                    </div>
+                    <h2 class="text-2xl font-bold text-slate-800">Calidad e Integridad del Dato</h2>
+                    <p class="text-slate-600 mt-2">Auditoría de errores de registro y propuestas para la App.</p>
+                </div>
+
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100 mb-8">
+                    <h3 class="font-bold text-slate-700 mb-4">Auditoría de Errores Detectados</h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left text-slate-500">
+                            <thead class="text-xs text-slate-700 uppercase bg-slate-50">
+                                <tr>
+                                    <th class="px-6 py-3">Tipo de Error</th>
+                                    <th class="px-6 py-3">Impacto</th>
+                                    <th class="px-6 py-3">Causa Probable</th>
+                                    <th class="px-6 py-3">Solución (App)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr class="bg-white border-b">
+                                    <td class="px-6 py-4 font-medium text-slate-900">Duplicidad Semántica</td>
+                                    <td class="px-6 py-4 text-amber-600">Alta (126 registros)</td>
+                                    <td class="px-6 py-4">Typo manual ("Hidroprimig")</td>
+                                    <td class="px-6 py-4">Gestión automática de Lotes</td>
+                                </tr>
+                                <tr class="bg-white border-b">
+                                    <td class="px-6 py-4 font-medium text-slate-900">Notas no Estructuradas</td>
+                                    <td class="px-6 py-4 text-red-600">Crítica (144 semillas ocultas)</td>
+                                    <td class="px-6 py-4">Interfaz rígida vs flujo rápido</td>
+                                    <td class="px-6 py-4">Botones de "Combo/Mix"</td>
+                                </tr>
+                                <tr class="bg-white">
+                                    <td class="px-6 py-4 font-medium text-slate-900">Sesgo de Default</td>
+                                    <td class="px-6 py-4 text-blue-600">Media</td>
+                                    <td class="px-6 py-4">Valores premarcados (Sustrato: No)</td>
+                                    <td class="px-6 py-4">Obligar selección explícita</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+
+        // --- CHARTS INITIALIZATION ---
+
+        function initDashboardChart() {
+            const ctx = document.getElementById('dashboardSpeciesChart').getContext('2d');
+            charts.dashboard = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: reportData.species.labels,
+                    datasets: [{
+                        data: reportData.species.data,
+                        backgroundColor: reportData.species.colors,
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'right' }
+                    }
+                }
+            });
+        }
+
+        function initBioChart() {
+            const ctx = document.getElementById('bioChart').getContext('2d');
+            charts.bio = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['Algarrobo', 'Tetraclinis', 'Bolina', 'Azofaifo', 'Encina', 'Coscoja'],
+                    datasets: [
+                        {
+                            label: 'Hidropriming (72h)',
+                            data: [126, 118, 71, 38, 0, 0],
+                            backgroundColor: '#0ea5e9', // Sky blue
+                            stack: 'Stack 0',
+                        },
+                        {
+                            label: 'Pregerminado (Fase 2)',
+                            data: [0, 0, 0, 0, 22, 4],
+                            backgroundColor: '#f59e0b', // Amber
+                            stack: 'Stack 0',
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { stacked: true },
+                        y: { stacked: true, beginAtZero: true }
+                    }
+                }
+            });
+        }
+
+        function initGISChart() {
+            const ctx = document.getElementById('gisChart').getContext('2d');
+            charts.gis = new Chart(ctx, {
+                type: 'polarArea',
+                data: {
+                    labels: reportData.orientation.labels,
+                    datasets: [{
+                        data: reportData.orientation.data,
+                        backgroundColor: reportData.orientation.colors.map(c => c + 'AA'), // Add transparency
+                        borderColor: '#fff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        r: { ticks: { display: false } } // Hide raw numbers on rings
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function (context) {
+                                    return context.label + ': ' + context.raw + '%';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // --- MODAL UTILS ---
+        function showActionPlan() {
+            document.getElementById('action-modal').classList.remove('hidden');
+        }
+
+        function closeActionModal() {
+            document.getElementById('action-modal').classList.add('hidden');
+        }
+
+        function toggleMobileMenu() {
+            const menu = document.getElementById('mobile-menu');
+            if (menu.classList.contains('hidden')) {
+                menu.classList.remove('hidden');
+            } else {
+                menu.classList.add('hidden');
+            }
+        }
+
+        // --- INIT ---
+        // Start at dashboard
+        navigate('dashboard');
+
+    </script>
+</body>
+
+</html>

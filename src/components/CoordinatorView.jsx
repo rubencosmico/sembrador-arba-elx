@@ -599,9 +599,19 @@ const CoordinatorView = ({ db, appId, campaignId, seeds, groups, onResetRole }) 
                                     <div className="text-emerald-950 font-extrabold text-3xl">{totalHoles}</div>
                                     <div className="text-emerald-800/40 text-[10px] uppercase font-bold tracking-wider">Golpes Totales</div>
                                 </div>
-                                <button onClick={exportCSV} className="flex items-center gap-2 px-4 py-2 bg-emerald-100 text-emerald-800 rounded-xl font-bold text-xs hover:bg-emerald-200 transition-colors">
-                                    <Download size={16} /> Exportar CSV
-                                </button>
+                                <div className="flex gap-2">
+                                    <a
+                                        href="/informe-jornada-0.html"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex items-center gap-2 px-4 py-2 bg-white border border-emerald-100/50 text-emerald-800 rounded-xl font-bold text-xs hover:bg-emerald-50 transition-colors shadow-sm"
+                                    >
+                                        <Info size={16} /> Ver Informe
+                                    </a>
+                                    <button onClick={exportCSV} className="flex items-center gap-2 px-4 py-2 bg-emerald-100 text-emerald-800 rounded-xl font-bold text-xs hover:bg-emerald-200 transition-colors">
+                                        <Download size={16} /> Exportar CSV
+                                    </button>
+                                </div>
                             </div>
 
                             <div className="flex flex-col md:flex-row gap-4 mb-6">
@@ -771,8 +781,9 @@ const CoordinatorView = ({ db, appId, campaignId, seeds, groups, onResetRole }) 
                             )}
                         </section>
                     </div>
-                )}
-            </div>
+                )
+                }
+            </div >
 
             {/* Editing Modal */}
             {
