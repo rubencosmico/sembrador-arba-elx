@@ -336,7 +336,7 @@ const CoordinatorView = ({ db, appId, campaignId, seeds, groups, onResetRole }) 
     };
 
     const exportCSV = () => {
-        const headers = ["Fecha", "Hora", "Jornada", "Equipo", "Especie", "Micrositio", "Lat", "Lng", "Golpes", "Notas", "Foto URL"];
+        const headers = ["Fecha", "Hora", "Jornada", "Equipo", "Especie", "Micrositio", "Orientación", "Semillas/Hoyo", "Protector", "Sustrato", "Lat", "Lng", "Golpes", "Notas", "Foto URL"];
         const rows = logs.map(log => {
             const date = log.timestamp?.seconds ? new Date(log.timestamp.seconds * 1000) : null;
             return [
@@ -346,6 +346,10 @@ const CoordinatorView = ({ db, appId, campaignId, seeds, groups, onResetRole }) 
                 log.groupName,
                 log.seedName,
                 log.microsite,
+                log.orientation || '',
+                log.quantity || '1',
+                log.withProtector ? 'Sí' : 'No',
+                log.withSubstrate ? 'Sí' : 'No',
                 log.location?.lat || '',
                 log.location?.lng || '',
                 log.holeCount || 1,
