@@ -336,15 +336,17 @@ const CoordinatorView = ({ db, appId, campaignId, seeds, groups, onResetRole }) 
     };
 
     const exportCSV = () => {
-        const headers = ["Fecha", "Hora", "Jornada", "Equipo", "Especie", "Micrositio", "Orientación", "Semillas/Hoyo", "Protector", "Sustrato", "Lat", "Lng", "Golpes", "Notas", "Foto URL"];
+        const headers = ["Fecha", "Hora", "Jornada", "Equipo", "Especie", "Tratamiento", "Micrositio", "Orientación", "Semillas/Hoyo", "Protector", "Sustrato", "Lat", "Lng", "Golpes", "Notas", "Foto URL"];
         const rows = logs.map(log => {
             const date = log.timestamp?.seconds ? new Date(log.timestamp.seconds * 1000) : null;
+            const seed = seeds.find(s => s.id === log.seedId);
             return [
                 date ? date.toLocaleDateString() : '',
                 date ? date.toLocaleTimeString() : '',
                 campaignId,
                 log.groupName,
                 log.seedName,
+                seed?.treatment || '',
                 log.microsite,
                 log.orientation || '',
                 log.quantity || '1',
