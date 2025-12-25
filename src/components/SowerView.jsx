@@ -718,6 +718,11 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
                                                 <span className="text-emerald-200">•</span>
                                                 <span>{new Date(log.timestamp?.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                                             </div>
+                                            {log.notes && (
+                                                <div className="mt-1.5 text-xs text-amber-800/70 italic bg-amber-50 px-2 py-1 rounded-lg border border-amber-100/50 truncate max-w-[200px] md:max-w-xs">
+                                                    "{log.notes}"
+                                                </div>
+                                            )}
                                         </div>
                                         <div className="flex items-center gap-3">
                                             <div className="text-right">
