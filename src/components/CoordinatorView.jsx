@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { addDoc, collection, serverTimestamp, doc, updateDoc, deleteDoc, arrayUnion, arrayRemove, query, where, orderBy, limit, startAfter, getDocs } from 'firebase/firestore';
+import { ref, uploadString, getDownloadURL } from 'firebase/storage';
+import SowingForm from './SowingForm';
 import {
     Leaf, Users, MapPin, ClipboardList, PlusCircle, Save, LogOut, Info,
     Download, Trash2, Edit2, Map as MapIcon, Table as TableIcon, X, Camera,
@@ -7,11 +9,12 @@ import {
 } from 'lucide-react';
 import MapView from './MapView';
 
-const CoordinatorView = ({ db, appId, campaignId, seeds, groups, onResetRole }) => {
+const CoordinatorView = ({ db, appId, campaignId, seeds, groups, storage, onResetRole }) => {
 
     // Local state for logs
     const [logs, setLogs] = useState([]);
     const [loadingLogs, setLoadingLogs] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     // Filter, Sort & Pagination State
     const [searchTerm, setSearchTerm] = useState('');
@@ -315,23 +318,51 @@ const CoordinatorView = ({ db, appId, campaignId, seeds, groups, onResetRole }) 
         if (!window.confirm("¿Seguro que quieres borrar este registro?")) return;
         try {
             await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'logs', logId));
+            setLogs(prev => prev.filter(l => l.id !== logId));
         } catch (e) {
             console.error("Error deleting", e);
         }
     };
 
-    const handleUpdateLog = async (e) => {
-        e.preventDefault();
+    const handleUpdateLog = async (formData) => {
         if (!editingLog) return;
+        setIsSubmitting(true);
         try {
-            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'logs', editingLog.id), {
-                holeCount: parseInt(editingLog.holeCount),
-                microsite: editingLog.microsite,
-                notes: editingLog.notes
-            });
+            let photoUrl = editingLog.photoUrl || null;
+
+            if (formData.photoDeleted) {
+                photoUrl = null;
+            }
+
+            if (formData.photo && storage) {
+                const logId = editingLog.id;
+                const photoRef = ref(storage, `photos/logs/${logId}_${Date.now()}.jpg`);
+                await uploadString(photoRef, formData.photo, 'data_url');
+                photoUrl = await getDownloadURL(photoRef);
+            }
+
+            const updates = {
+                seedId: formData.seedId,
+                seedName: formData.seedName,
+                microsite: formData.microsite,
+                orientation: formData.orientation,
+                withSubstrate: formData.withSubstrate,
+                withProtector: formData.withProtector,
+                quantity: formData.quantity,
+                holeCount: formData.holeCount,
+                notes: formData.notes,
+                location: formData.location,
+                photoUrl: photoUrl
+            };
+
+            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'logs', editingLog.id), updates);
+            setLogs(prev => prev.map(l => l.id === editingLog.id ? { ...l, ...updates } : l));
             setEditingLog(null);
         } catch (e) {
             console.error("Error updating", e);
+            alert("Error al actualizar.");
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -674,31 +705,80 @@ const CoordinatorView = ({ db, appId, campaignId, seeds, groups, onResetRole }) 
                                                     {expandedLogId === log.id && (
                                                         <tr className="bg-emerald-50/30 animate-fadeIn">
                                                             <td colSpan="5" className="p-4">
-                                                                <div className="flex gap-4 items-start">
-                                                                    {(log.photoUrl || log.photo) ? (
-                                                                        <div className="w-32 h-32 shrink-0 rounded-xl overflow-hidden border-2 border-white shadow-sm">
-                                                                            <img src={log.photoUrl || log.photo} alt="Evidencia" className="w-full h-full object-cover" />
-                                                                        </div>
-                                                                    ) : (
-                                                                        <div className="w-32 h-32 shrink-0 rounded-xl bg-emerald-100/50 flex flex-col items-center justify-center text-emerald-800/30 border-2 border-white shadow-sm">
-                                                                            <Camera size={24} />
-                                                                            <span className="text-[10px] font-bold uppercase mt-1">Sin foto</span>
-                                                                        </div>
-                                                                    )}
-                                                                    <div className="space-y-2 text-sm text-emerald-900">
-                                                                        <div>
-                                                                            <span className="text-[10px] font-bold text-emerald-800/50 uppercase tracking-wider block">Micrositio</span>
-                                                                            <span className="font-medium">{log.microsite}</span>
-                                                                        </div>
-                                                                        {log.notes && (
-                                                                            <div>
-                                                                                <span className="text-[10px] font-bold text-emerald-800/50 uppercase tracking-wider block">Notas</span>
-                                                                                <span className="italic">"{log.notes}"</span>
+                                                                <div className="flex flex-col md:flex-row gap-6">
+                                                                    {/* Foto */}
+                                                                    <div className="shrink-0">
+                                                                        {(log.photoUrl || log.photo) ? (
+                                                                            <div className="w-full md:w-36 h-36 rounded-2xl overflow-hidden border-4 border-white shadow-sm cursor-pointer hover:shadow-md transition-all" onClick={() => setViewImage(log.photoUrl || log.photo)}>
+                                                                                <img src={log.photoUrl || log.photo} alt="Evidencia" className="w-full h-full object-cover hover:scale-110 transition-transform duration-500" />
+                                                                            </div>
+                                                                        ) : (
+                                                                            <div className="w-full md:w-36 h-36 rounded-2xl bg-emerald-100/50 flex flex-col items-center justify-center text-emerald-800/30 border-4 border-white shadow-sm">
+                                                                                <Camera size={24} />
+                                                                                <span className="text-[10px] font-bold uppercase mt-2">Sin foto</span>
                                                                             </div>
                                                                         )}
+                                                                    </div>
+
+                                                                    {/* Grid de Datos */}
+                                                                    <div className="flex-1 grid grid-cols-2 lg:grid-cols-4 gap-4 text-sm text-emerald-900">
+
+                                                                        <div className="col-span-2 lg:col-span-4 bg-white/60 p-3 rounded-xl border border-emerald-50">
+                                                                            <span className="text-[10px] font-bold text-emerald-800/50 uppercase tracking-wider block mb-1">Nota del Sembrador</span>
+                                                                            <span className="italic block text-emerald-950 font-medium">{log.notes || "Sin notas"}</span>
+                                                                        </div>
+
                                                                         <div>
-                                                                            <span className="text-[10px] font-bold text-emerald-800/50 uppercase tracking-wider block">Ubicación</span>
-                                                                            <span className="font-mono text-xs">{log.location?.lat?.toFixed(6)}, {log.location?.lng?.toFixed(6)} (±{log.location?.acc?.toFixed(0)}m)</span>
+                                                                            <span className="text-[10px] font-bold text-emerald-800/50 uppercase tracking-wider block">Micrositio</span>
+                                                                            <span className="font-bold text-emerald-950 block">{log.microsite || '-'}</span>
+                                                                        </div>
+                                                                        <div>
+                                                                            <span className="text-[10px] font-bold text-emerald-800/50 uppercase tracking-wider block">Orientación</span>
+                                                                            <span className="font-bold text-emerald-950 block">{log.orientation || '-'}</span>
+                                                                        </div>
+                                                                        <div>
+                                                                            <span className="text-[10px] font-bold text-emerald-800/50 uppercase tracking-wider block">Semillas/Hoyo</span>
+                                                                            <span className="font-bold text-emerald-950 block">{log.quantity || '1'}</span>
+                                                                        </div>
+
+                                                                        {/* Booleanos */}
+                                                                        <div>
+                                                                            <span className="text-[10px] font-bold text-emerald-800/50 uppercase tracking-wider block">Sustrato</span>
+                                                                            <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-[10px] uppercase ${log.withSubstrate ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-400'}`}>
+                                                                                {log.withSubstrate ? "SÍ" : "NO"}
+                                                                            </div>
+                                                                        </div>
+                                                                        <div>
+                                                                            <span className="text-[10px] font-bold text-emerald-800/50 uppercase tracking-wider block">Protector</span>
+                                                                            <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-[10px] uppercase ${log.withProtector ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-400'}`}>
+                                                                                {log.withProtector ? "SÍ" : "NO"}
+                                                                            </div>
+                                                                        </div>
+
+                                                                        {/* Tratamiento obtenido de seeds prop */}
+                                                                        <div>
+                                                                            <span className="text-[10px] font-bold text-emerald-800/50 uppercase tracking-wider block">Tratamiento</span>
+                                                                            <span className="font-bold text-emerald-950 block">{seeds.find(s => s.id === log.seedId)?.treatment || 'Ninguno'}</span>
+                                                                        </div>
+
+                                                                        <div className="col-span-2">
+                                                                            <span className="text-[10px] font-bold text-emerald-800/50 uppercase tracking-wider block">Ubicación GPS</span>
+                                                                            {log.location?.lat ? (
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <MapPin size={14} className="text-emerald-500" />
+                                                                                    <a
+                                                                                        href={`https://www.google.com/maps/search/?api=1&query=${log.location.lat},${log.location.lng}`}
+                                                                                        target="_blank"
+                                                                                        rel="noreferrer"
+                                                                                        className="font-mono text-xs font-bold text-emerald-700 hover:underline"
+                                                                                    >
+                                                                                        {log.location.lat.toFixed(6)}, {log.location.lng.toFixed(6)}
+                                                                                    </a>
+                                                                                    <span className="text-[10px] text-emerald-800/40 font-bold bg-white px-1.5 border border-emerald-100 rounded">±{log.location.acc?.toFixed(0)}m</span>
+                                                                                </div>
+                                                                            ) : (
+                                                                                <span className="text-xs text-gray-400 font-medium flex items-center gap-1"><MapPin size={12} /> Sin GPS</span>
+                                                                            )}
                                                                         </div>
                                                                     </div>
                                                                 </div>
@@ -788,33 +868,20 @@ const CoordinatorView = ({ db, appId, campaignId, seeds, groups, onResetRole }) 
             {/* Editing Modal */}
             {
                 editingLog && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/50 backdrop-blur-sm">
-                        <div className="bg-white p-6 rounded-3xl w-full max-w-sm shadow-2xl animate-slideUp">
-                            <h3 className="font-bold text-lg text-emerald-950 mb-4">Editar Registro</h3>
-                            <form onSubmit={handleUpdateLog} className="space-y-4">
-                                <div>
-                                    <label className="text-[10px] font-bold text-emerald-800/40 uppercase">Cantidad de Golpes</label>
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        className="w-full p-3 bg-emerald-50 rounded-xl font-bold text-emerald-900 outline-none"
-                                        value={editingLog.holeCount || 1}
-                                        onChange={e => setEditingLog({ ...editingLog, holeCount: e.target.value })}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-[10px] font-bold text-emerald-800/40 uppercase">Notas</label>
-                                    <textarea
-                                        className="w-full p-3 bg-emerald-50 rounded-xl text-sm outline-none"
-                                        value={editingLog.notes || ''}
-                                        onChange={e => setEditingLog({ ...editingLog, notes: e.target.value })}
-                                    />
-                                </div>
-                                <div className="flex gap-3">
-                                    <button type="button" onClick={() => setEditingLog(null)} className="flex-1 py-3 text-emerald-600 font-bold">Cancelar</button>
-                                    <button type="submit" className="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-bold">Guardar</button>
-                                </div>
-                            </form>
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm overflow-y-auto">
+                        <div className="bg-[#f1f5f0] p-6 rounded-3xl w-full max-w-lg shadow-2xl animate-slideUp my-auto max-h-[90vh] overflow-y-auto custom-scrollbar">
+                            <div className="flex justify-between items-center mb-1">
+                                <h3 className="font-bold text-lg text-emerald-950">Editar Registro</h3>
+                                <button onClick={() => setEditingLog(null)} className="p-2 text-emerald-900/40 hover:text-emerald-900"><X size={24} /></button>
+                            </div>
+                            <SowingForm
+                                initialData={editingLog}
+                                seeds={seeds}
+                                onSave={handleUpdateLog}
+                                onCancel={() => setEditingLog(null)}
+                                onDelete={() => handleDeleteLog(editingLog.id)}
+                                isSaving={isSubmitting}
+                            />
                         </div>
                     </div>
                 )

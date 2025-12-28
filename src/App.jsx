@@ -112,6 +112,7 @@ function App() {
             <CoordinatorView
                 db={db} appId={appId} campaignId={campaign.id}
                 seeds={seeds} groups={groups} logs={logs}
+                storage={storage}
                 onResetRole={() => setRole(null)}
             />
         );

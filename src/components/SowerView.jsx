@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { addDoc, updateDoc, doc, collection, serverTimestamp, query, orderBy, where, getDocs, limit, onSnapshot } from 'firebase/firestore';
+import { addDoc, updateDoc, deleteDoc, doc, collection, serverTimestamp, query, orderBy, where, getDocs, limit, onSnapshot } from 'firebase/firestore';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import {
-    Users, LogOut, ArrowRight, AlertTriangle, PlusCircle, History,
-    Leaf, Check, Compass, Shield, MapPin, Camera, X, Save,
-    Search, ChevronDown, ChevronUp, HelpCircle, Pencil
+    Users, LogOut, ArrowRight, AlertTriangle, History,
+    Leaf, X, HelpCircle, PlusCircle, Camera, MapPin, Trash2,
+    Search, ChevronDown, ChevronUp, Pencil
 } from 'lucide-react';
 import ManualView from './ManualView';
+import SowingForm from './SowingForm';
 
 const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onResetRole }) => {
     const [selectedGroupId, setSelectedGroupId] = useState(null);
@@ -14,24 +15,12 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
     const [showManual, setShowManual] = useState(false);
     const [view, setView] = useState('form');
     const [editingLog, setEditingLog] = useState(null);
-    const [formData, setFormData] = useState({
-        seedId: '',
-        microsite: 'Nodriza Viva',
-        orientation: 'Norte',
-        withSubstrate: true,
-        withProtector: false,
-        quantity: '1',
-        holeCount: 1,
-        notes: '',
-        photo: null
-    });
+    // FormData, GPS, and Photo states moved to SowingForm
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [myLogs, setMyLogs] = useState([]);
+    const [allTeamLogs, setAllTeamLogs] = useState([]);
     const [loadingLogs, setLoadingLogs] = useState(false);
-    const [gpsStatus, setGpsStatus] = useState('waiting');
-    const [currentLocation, setCurrentLocation] = useState({ lat: null, lng: null, acc: null });
     const [viewImage, setViewImage] = useState(null);
-    const [isProcessingPhoto, setIsProcessingPhoto] = useState(false);
+    const [expandedLogId, setExpandedLogId] = useState(null);
 
     // Estados para el cuaderno de campo con paginación
     const [searchTerm, setSearchTerm] = useState('');
@@ -39,7 +28,6 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
     const [sortDirection, setSortDirection] = useState('asc'); // 'asc' o 'desc'
 
     // Estados para paginación
-    const [allTeamLogs, setAllTeamLogs] = useState([]); // Todos los logs del equipo
     const [currentPage, setCurrentPage] = useState(1);
     const [logsPerPage, setLogsPerPage] = useState(10);
     const PAGE_SIZE_OPTIONS = [5, 10, 20, 50];
@@ -58,7 +46,7 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
             snapshot.forEach(doc => {
                 const data = doc.data();
                 const gid = data.groupId;
-                const count = typeof data.holeCount === 'number' ? data.holeCount : 1;
+                const count = parseInt(data.holeCount) || 1;
 
                 if (gid) {
                     stats[gid] = (stats[gid] || 0) + count;
@@ -88,6 +76,7 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
                 const logsRef = collection(db, 'artifacts', appId, 'public', 'data', 'logs');
                 const q = query(
                     logsRef,
+                    where('campaignId', '==', campaignId),
                     where('groupId', '==', selectedGroupId),
                     orderBy('timestamp', 'desc'),
                     limit(500)
@@ -170,203 +159,80 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
 
     const startEditing = (log) => {
         setEditingLog(log);
-        setFormData({
-            seedId: log.seedId,
-            microsite: log.microsite || 'Nodriza Viva',
-            orientation: log.orientation || 'Norte',
-            withSubstrate: log.withSubstrate || false,
-            withProtector: log.withProtector || false,
-            quantity: String(log.quantity || '1'),
-            holeCount: log.holeCount || 1,
-            notes: log.notes || '',
-            photo: null
-        });
-
-        if (log.location && log.location.lat) {
-            setCurrentLocation(log.location);
-            setGpsStatus('success');
-        } else {
-            setCurrentLocation({ lat: null, lng: null, acc: null });
-            setGpsStatus('waiting');
-        }
-
         setView('form');
     };
 
     const cancelEditing = () => {
         setEditingLog(null);
-        setFormData({
-            seedId: '',
-            microsite: 'Nodriza Viva',
-            orientation: 'Norte',
-            withSubstrate: true,
-            withProtector: false,
-            quantity: '1',
-            holeCount: 1,
-            notes: '',
-            photo: null
-        });
-        setCurrentLocation({ lat: null, lng: null, acc: null });
-        setGpsStatus('waiting');
         setView('history');
     };
 
-    const captureGPS = async () => {
-        if (!("geolocation" in navigator)) return;
-        setGpsStatus('searching');
-        const getPosition = (options) => {
-            return new Promise((resolve, reject) => {
-                navigator.geolocation.getCurrentPosition(resolve, reject, options);
-            });
-        };
 
-        try {
-            // Try High Accuracy first
-            let position;
-            try {
-                position = await getPosition({ enableHighAccuracy: true, timeout: 5000, maximumAge: 0 });
-            } catch (e) {
-                console.log("High accuracy failed, trying low accuracy");
-                position = await getPosition({ enableHighAccuracy: false, timeout: 5000, maximumAge: 0 });
-            }
-
-            const location = {
-                lat: position.coords.latitude,
-                lng: position.coords.longitude,
-                acc: position.coords.accuracy
-            };
-            setCurrentLocation(location);
-            setGpsStatus('success');
-            if (window.navigator && window.navigator.vibrate) window.navigator.vibrate(50);
-            return location;
-        } catch (err) {
-            console.warn("GPS falló", err);
-            setGpsStatus('error');
-            return null;
-        }
-    };
-
-    const handleSow = async () => {
-        if (!formData.seedId) {
-            alert("⚠️ ¡Falta elegir la semilla!");
-            return;
-        }
+    const handleSow = async (data) => {
         setIsSubmitting(true);
-        let location = currentLocation;
-        if (!location.lat) {
-            const captured = await captureGPS();
-            if (captured) location = captured;
-        }
-
         try {
             const selectedGroup = groups.find(g => g.id === selectedGroupId);
-            const seedName = seeds.find(s => s.id === formData.seedId)?.species || 'Desconocida';
+            // data.seedName ya viene de SowingForm, pero si queremos recalcular por seguridad:
+            const seed = seeds.find(s => s.id === data.seedId);
+            const seedName = seed ? seed.species : (data.seedName || 'Desconocida');
 
             const commonData = {
-                seedId: formData.seedId,
-                microsite: formData.microsite,
-                orientation: formData.orientation,
-                withSubstrate: formData.withSubstrate,
-                withProtector: formData.withProtector,
-                quantity: formData.quantity,
-                holeCount: parseInt(formData.holeCount) || 1,
-                notes: formData.notes,
-                location,
+                holeCount: parseInt(data.holeCount) || 1,
+                microsite: data.microsite,
+                orientation: data.orientation,
+                withSubstrate: data.withSubstrate,
+                withProtector: data.withProtector,
+                quantity: String(data.quantity || '1'),
+                notes: data.notes,
+                location: data.location,
+                seedId: data.seedId,
                 seedName
             };
 
-            if (editingLog) {
-                // UPDATE EXISTING LOG
-                let photoUrl = editingLog.photoUrl || null;
-                if (formData.photo && storage) {
-                    const logId = editingLog.id; // Keep same ID for photo path logic usually, or new. Let's use new path to avoid cache issues or complexities.
-                    const photoRef = ref(storage, `photos/logs/${logId}_${Date.now()}.jpg`);
-                    await uploadString(photoRef, formData.photo, 'data_url');
-                    photoUrl = await getDownloadURL(photoRef);
-                }
+            let photoUrl = editingLog?.photoUrl || null;
 
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'logs', editingLog.id);
-                await updateDoc(docRef, {
+            if (data.photoDeleted) {
+                photoUrl = null;
+            }
+
+            if (data.photo && storage) {
+                const logId = editingLog ? editingLog.id : `${Date.now()}_${userId}_${Math.random().toString(36).substr(2, 9)}`;
+                const photoRef = ref(storage, `photos/logs/${logId}_${Date.now()}.jpg`);
+                await uploadString(photoRef, data.photo, 'data_url');
+                photoUrl = await getDownloadURL(photoRef);
+            }
+
+            if (editingLog) {
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'logs', editingLog.id), {
                     ...commonData,
                     photoUrl,
                     updatedAt: serverTimestamp()
-                    // Don't update campaignId, groupId, userId, original timestamp
                 });
-
-                // Update local state to reflect change immediately if in list (optional, fetchLogs handles it usually but may delay)
-                setAllTeamLogs(prev => prev.map(l => l.id === editingLog.id ? { ...l, ...commonData, photoUrl } : l));
-
+                // Update local list
+                setAllTeamLogs(prev => prev.map(l => l.id === editingLog.id ? { ...l, ...commonData, photoUrl, updatedAt: { seconds: Date.now() / 1000 } } : l));
             } else {
-                // CREATE NEW LOG
                 const logData = {
                     ...commonData,
+                    photoUrl,
                     campaignId,
                     groupId: selectedGroupId,
                     groupName: selectedGroup?.name || 'Desconocido',
                     userId,
-                    timestamp: serverTimestamp(),
+                    timestamp: serverTimestamp()
                 };
-
-                if (formData.photo && storage) {
-                    const logId = `${Date.now()}_${userId}_${Math.random().toString(36).substr(2, 9)}`;
-                    const photoRef = ref(storage, `photos/logs/${logId}.jpg`);
-                    await uploadString(photoRef, formData.photo, 'data_url');
-                    const photoUrl = await getDownloadURL(photoRef);
-                    logData.photoUrl = photoUrl;
-                }
-
                 const docRef = await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'logs'), logData);
                 const newLog = { id: docRef.id, ...logData, timestamp: { seconds: Date.now() / 1000 } };
                 setAllTeamLogs(prev => [newLog, ...prev]);
             }
 
-            cancelEditing(); // Resets form and clears editingLog
+            cancelEditing();
             if (window.navigator && window.navigator.vibrate) window.navigator.vibrate(200);
+
         } catch (error) {
             console.error('Error guardando:', error);
             alert("Error guardando: " + error.message);
         } finally {
             setIsSubmitting(false);
-        }
-    };
-
-    // Helper to compress image (same as Coordinator)
-    const compressImage = (file) => { /* omitted for brevity, assuming moved to util or duped */
-        // Simple duplicate for now to avoid external dep. 
-        return new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = (event) => {
-                const img = new Image();
-                img.src = event.target.result;
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    let width = img.width;
-                    let height = img.height;
-                    const maxWidth = 800;
-                    if (width > maxWidth) { height = (maxWidth / width) * height; width = maxWidth; }
-                    canvas.width = width; canvas.height = height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, width, height);
-                    resolve(canvas.toDataURL('image/jpeg', 0.7));
-                };
-            };
-        });
-    };
-
-    const handlePhotoChange = async (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            setIsProcessingPhoto(true);
-            try {
-                const compressed = await compressImage(file);
-                setFormData({ ...formData, photo: compressed });
-            } catch (err) {
-                console.error("Error compressing photo", err);
-                alert("Error al procesar la foto. Inténtalo de nuevo.");
-            } finally {
-                setIsProcessingPhoto(false);
-            }
         }
     };
 
@@ -439,11 +305,35 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
         return <ManualView onBack={() => setShowManual(false)} />;
     }
 
+    const exitGroup = () => {
+        setSelectedGroupId(null);
+        setEditingLog(null);
+        setView('form');
+    };
+
+    const confirmAndDelete = async (logId) => {
+        if (window.confirm("¿Estás seguro de que quieres eliminar este registro? Esta acción no se puede deshacer.")) {
+            setIsSubmitting(true); // Reuse submitting state for loading indication
+            try {
+                await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'logs', logId));
+                setAllTeamLogs(prev => prev.filter(l => l.id !== logId));
+                if (editingLog && editingLog.id === logId) {
+                    cancelEditing();
+                }
+            } catch (error) {
+                console.error("Error eliminando:", error);
+                alert("Error al eliminar el registro.");
+            } finally {
+                setIsSubmitting(false);
+            }
+        }
+    };
+
     return (
         <div className="min-h-screen bg-[#f1f5f0] pb-28 font-sans">
             <header className="glass-card sticky top-0 z-30 px-6 py-4 flex justify-between items-end border-b border-amber-100/50">
                 <div className="flex gap-4 items-end">
-                    <button onClick={() => setSelectedGroupId(null)} className="mb-1 text-emerald-950/30 hover:text-emerald-950/60 transition-colors">
+                    <button onClick={exitGroup} className="mb-1 text-emerald-950/30 hover:text-emerald-950/60 transition-colors">
                         <LogOut size={20} />
                     </button>
                     <button onClick={() => setShowManual(true)} className="mb-1 text-emerald-950/30 hover:text-emerald-950/60 transition-colors">
@@ -475,9 +365,9 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
             </div>
 
             {view === 'form' && (
-                <div className="px-3 md:px-5 space-y-8 animate-slideUp pb-12">
+                <div className="px-3 md:px-5 pb-12 animate-slideUp">
                     {editingLog && (
-                        <div className="bg-amber-100 p-4 rounded-2xl flex items-center justify-between border border-amber-200 mb-4 animate-pulse">
+                        <div className="bg-amber-100 p-4 rounded-2xl flex items-center justify-between border border-amber-200 mb-6 animate-pulse">
                             <span className="text-amber-900 font-bold flex items-center gap-2">
                                 <Pencil size={18} /> Editando registro
                             </span>
@@ -486,147 +376,15 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
                             </button>
                         </div>
                     )}
-                    <section className="mt-4">
-                        <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-[0.2em] block mb-3 px-1">1. ¿Qué estás sembrando?</label>
-                        <div className="grid gap-3">
-                            {mySeeds.map(seed => (
-                                <button
-                                    key={seed.id}
-                                    onClick={() => setFormData({ ...formData, seedId: seed.id })}
-                                    className={`btn-premium group flex items-center p-4 rounded-3xl border-2 transition-all relative overflow-hidden ${formData.seedId === seed.id ? 'bg-emerald-600 border-emerald-600 text-white shadow-emerald-200' : 'bg-white border-emerald-100/50 text-emerald-950'}`}
-                                >
-                                    <div className="flex-1 text-left pl-4 relative z-10">
-                                        <div className="font-extrabold text-lg leading-tight uppercase tracking-tight">{seed.species}</div>
-                                        <div className={`text-[10px] font-bold uppercase tracking-widest mt-0.5 ${formData.seedId === seed.id ? 'text-emerald-200' : 'text-emerald-800/30'}`}>{seed.provider}</div>
-                                    </div>
-                                    {formData.seedId === seed.id && <div className="bg-white/20 p-1 rounded-full"><Check size={16} /></div>}
-                                </button>
-                            ))}
-                        </div>
-                    </section>
 
-                    <div className="space-y-6">
-                        <section className="glass-card p-4 md:p-6 rounded-3xl shadow-sm border border-emerald-100/30 space-y-6">
-                            {/* Hole Count / Batch Logging */}
-                            <div className="bg-amber-50 p-3 md:p-4 rounded-2xl border border-amber-100">
-                                <label className="text-[10px] font-bold text-amber-800/60 uppercase tracking-[0.2em] block mb-2">Cantidad de Golpes</label>
-                                <div className="flex items-center gap-2 md:gap-4">
-                                    <button onClick={() => setFormData(p => ({ ...p, holeCount: Math.max(1, p.holeCount - 1) }))} className="w-10 h-10 md:w-12 md:h-12 bg-white rounded-xl shadow text-amber-600 font-bold text-xl">-</button>
-                                    <input
-                                        type="number"
-                                        className="flex-1 text-center text-3xl font-black bg-transparent outline-none text-emerald-950 min-w-0"
-                                        value={formData.holeCount}
-                                        onChange={e => setFormData({ ...formData, holeCount: parseInt(e.target.value) || 1 })}
-                                    />
-                                    <button onClick={() => setFormData(p => ({ ...p, holeCount: p.holeCount + 1 }))} className="w-10 h-10 md:w-12 md:h-12 bg-white rounded-xl shadow text-amber-600 font-bold text-xl">+</button>
-                                </div>
-                                <p className="text-center text-[10px] text-amber-800/40 mt-2 font-bold px-4">Usa esto si has hecho varios hoyos en el mismo punto.</p>
-                            </div>
-
-                            <div>
-                                <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-[0.2em] block mb-4">Micrositio</label>
-                                <div className="flex p-1.5 bg-emerald-900/5 rounded-2xl">
-                                    {['Nodriza Viva', 'Nodriza Muerta', 'Alcorque'].map(m => (
-                                        <button key={m} onClick={() => setFormData({ ...formData, microsite: m })} className={`flex-1 py-3 text-[10px] font-black uppercase rounded-xl transition-all ${formData.microsite === m ? 'bg-white text-emerald-900 shadow-sm' : 'text-emerald-900/40'}`}>{m}</button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-[0.2em] block mb-4">Orientación</label>
-                                <div className="flex p-1.5 bg-emerald-900/5 rounded-2xl">
-                                    {['Norte', 'Sur', 'Este', 'Oeste'].map(o => (
-                                        <button key={o} onClick={() => setFormData({ ...formData, orientation: o })} className={`flex-1 py-3 text-[10px] font-black uppercase rounded-xl transition-all ${formData.orientation === o ? 'bg-white text-emerald-900 shadow-sm' : 'text-emerald-900/40'}`}>{o}</button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-[0.2em] block mb-4">Semillas por Hoyo</label>
-                                <div className="flex p-1.5 bg-emerald-900/5 rounded-2xl">
-                                    {['1', '2', '3', '4', '5'].map(q => (
-                                        <button key={q} onClick={() => setFormData({ ...formData, quantity: q })} className={`flex-1 py-3 text-[10px] font-black uppercase rounded-xl transition-all ${formData.quantity === q ? 'bg-white text-emerald-900 shadow-sm' : 'text-emerald-900/40'}`}>{q}</button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div className="flex gap-4">
-                                <button
-                                    onClick={() => setFormData({ ...formData, withSubstrate: !formData.withSubstrate })}
-                                    className={`flex-1 py-4 px-4 rounded-2xl border-2 transition-all flex items-center justify-between ${formData.withSubstrate ? 'bg-emerald-50 border-emerald-500 text-emerald-700' : 'bg-white border-emerald-100 text-emerald-900/40'}`}
-                                >
-                                    <span className="text-xs font-black uppercase">Sustrato</span>
-                                    {formData.withSubstrate && <Check size={18} />}
-                                </button>
-                                <button
-                                    onClick={() => setFormData({ ...formData, withProtector: !formData.withProtector })}
-                                    className={`flex-1 py-4 px-4 rounded-2xl border-2 transition-all flex items-center justify-between ${formData.withProtector ? 'bg-amber-50 border-amber-500 text-amber-700' : 'bg-white border-emerald-100 text-emerald-900/40'}`}
-                                >
-                                    <span className="text-xs font-black uppercase">Protector</span>
-                                    <Shield size={18} className={formData.withProtector ? '' : 'opacity-30'} />
-                                </button>
-                            </div>
-
-                            <div>
-                                <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-[0.2em] block mb-3">Notas (Opcional)</label>
-                                <textarea
-                                    value={formData.notes}
-                                    onChange={e => setFormData({ ...formData, notes: e.target.value })}
-                                    placeholder="Observaciones, estado del terreno, etc."
-                                    className="w-full p-4 rounded-2xl border-2 border-emerald-100 focus:border-emerald-500 outline-none text-sm resize-none"
-                                    rows={2}
-                                />
-                            </div>
-
-                            <button
-                                onClick={captureGPS}
-                                className={`w-full flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${gpsStatus === 'success' ? 'bg-emerald-50 border-emerald-500 text-emerald-700' : 'bg-white border-emerald-100 text-emerald-900/40'}`}
-                            >
-                                <div className="flex items-center gap-3">
-                                    <MapPin size={20} className={gpsStatus === 'searching' ? 'animate-bounce' : ''} />
-                                    <span className="text-xs font-black uppercase">{gpsStatus === 'success' ? `GPS OK (${currentLocation.acc?.toFixed(0)}m)` : gpsStatus === 'searching' ? 'Buscando...' : 'Activar GPS'}</span>
-                                </div>
-                                {gpsStatus === 'success' && <Check size={20} />}
-                            </button>
-
-                            <div className="pt-2">
-                                <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-[0.2em] block mb-3 px-1">Foto (Opcional)</label>
-                                {!formData.photo && !editingLog?.photoUrl ? (
-                                    <label className="w-full flex items-center justify-center p-6 border-2 border-dashed border-emerald-100 rounded-2xl cursor-pointer hover:bg-emerald-50 transition-colors">
-                                        <Camera size={24} className="text-emerald-300" />
-                                        <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoChange} />
-                                    </label>
-                                ) : (
-                                    <div className="relative h-40 rounded-xl overflow-hidden bg-black/5">
-                                        <img src={formData.photo || editingLog?.photoUrl} className="w-full h-full object-contain" alt="Evidencia" />
-                                        <div className="absolute top-2 right-2 flex gap-2">
-                                            <label className="bg-black/50 text-white p-2 rounded-full backdrop-blur-md cursor-pointer">
-                                                <Pencil size={14} />
-                                                <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoChange} />
-                                            </label>
-                                            <button onClick={() => setFormData({ ...formData, photo: null })} className="bg-red-500 text-white p-2 rounded-full shadow-lg">
-                                                <X size={14} />
-                                            </button>
-                                        </div>
-                                        {editingLog?.photoUrl && !formData.photo && (
-                                            <div className="absolute bottom-2 left-2 bg-black/50 text-white text-[10px] px-2 py-1 rounded backdrop-blur-md">
-                                                Foto actual
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-
-                            <button onClick={handleSow} disabled={isSubmitting || isProcessingPhoto} className={`btn-premium w-full text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 mt-2 ${isSubmitting || isProcessingPhoto ? 'bg-gray-400' : 'bg-emerald-700 hover:bg-emerald-800'}`}>
-                                <Save size={18} />
-                                <span>
-                                    {isSubmitting ? 'Guardando...' :
-                                        isProcessingPhoto ? 'Procesando Foto...' :
-                                            editingLog ? 'Actualizar Registro' : 'Registrar Siembra'}
-                                </span>
-                            </button>
-                        </section>
-                    </div>
+                    <SowingForm
+                        initialData={editingLog || undefined}
+                        seeds={mySeeds}
+                        onSave={handleSow}
+                        onCancel={cancelEditing}
+                        onDelete={editingLog ? () => confirmAndDelete(editingLog.id) : undefined}
+                        isSaving={isSubmitting}
+                    />
                 </div>
             )}
 
@@ -721,117 +479,187 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
                             </div>
 
                             {/* Lista de registros */}
-                            <div className="space-y-3">
+                            <div className="space-y-3 mt-4">
                                 {paginatedLogs.map(log => (
-                                    <div key={log.id} className="glass-card p-4 rounded-2xl border border-emerald-100/30 flex justify-between items-center group">
-                                        <div className="flex-1">
-                                            <div className="font-bold text-emerald-950 text-sm flex items-center gap-2">
-                                                {log.seedName}
-                                                {log.notes && <span className="w-1.5 h-1.5 bg-amber-400 rounded-full"></span>}
-                                            </div>
-                                            <div className="text-xs text-emerald-800/50 flex items-center gap-2">
-                                                <span>{log.microsite}</span>
-                                                <span className="text-emerald-200">•</span>
-                                                <span>{new Date(log.timestamp?.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                            </div>
-                                            {log.notes && (
-                                                <div className="mt-1.5 text-xs text-amber-800/70 italic bg-amber-50 px-2 py-1 rounded-lg border border-amber-100/50 truncate max-w-[200px] md:max-w-xs">
-                                                    "{log.notes}"
+                                    <div
+                                        key={log.id}
+                                        className={`glass-card rounded-2xl border transition-all cursor-pointer overflow-hidden ${expandedLogId === log.id ? 'bg-emerald-50/80 border-emerald-200 shadow-md' : 'border-emerald-100/30 hover:bg-white/60'}`}
+                                        onClick={() => setExpandedLogId(expandedLogId === log.id ? null : log.id)}
+                                    >
+                                        <div className="p-4 flex justify-between items-center">
+                                            <div className="flex-1">
+                                                <div className="font-bold text-emerald-950 text-sm flex items-center gap-2">
+                                                    {log.seedName}
+                                                    {log.notes && <span className="w-1.5 h-1.5 bg-amber-400 rounded-full"></span>}
                                                 </div>
-                                            )}
-                                        </div>
-                                        <div className="flex items-center gap-3">
-                                            <div className="text-right">
-                                                <div className="font-black text-emerald-700 text-lg">{log.holeCount || 1}</div>
-                                                <div className="text-[9px] font-bold text-emerald-800/30 uppercase">Golpes</div>
+                                                <div className="text-xs text-emerald-800/50 flex items-center gap-2">
+                                                    <span>{log.microsite}</span>
+                                                    <span className="text-emerald-200">•</span>
+                                                    <span>{log.timestamp?.seconds ? new Date(log.timestamp.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}</span>
+                                                </div>
                                             </div>
 
-                                            {log.photoUrl && (
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); setViewImage(log.photoUrl); }}
-                                                    className="w-10 h-10 bg-emerald-100/50 rounded-xl flex items-center justify-center text-emerald-600 hover:bg-emerald-200 transition-colors"
-                                                >
-                                                    <Camera size={16} />
-                                                </button>
-                                            )}
+                                            <div className="flex items-center gap-2">
+                                                <div className="text-right mr-1">
+                                                    <div className="font-black text-emerald-700 text-lg">{log.holeCount || 1}</div>
+                                                    <div className="text-[9px] font-bold text-emerald-800/30 uppercase">Golpes</div>
+                                                </div>
 
-                                            <button
-                                                onClick={(e) => {
-                                                    e.preventDefault();
-                                                    e.stopPropagation();
-                                                    startEditing(log);
-                                                }}
-                                                className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600 hover:bg-emerald-100 active:scale-95 transition-all cursor-pointer relative z-10"
-                                            >
-                                                <Pencil size={16} />
-                                            </button>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        startEditing(log);
+                                                    }}
+                                                    className="w-9 h-9 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600 hover:bg-emerald-100 active:scale-95 transition-all border border-emerald-100"
+                                                >
+                                                    <Pencil size={16} />
+                                                </button>
+
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        confirmAndDelete(log.id);
+                                                    }}
+                                                    className="w-9 h-9 bg-red-50 rounded-xl flex items-center justify-center text-red-500 hover:bg-red-100 active:scale-95 transition-all border border-red-100"
+                                                >
+                                                    <Trash2 size={16} />
+                                                </button>
+
+                                                <div className="text-emerald-300 ml-1">
+                                                    {expandedLogId === log.id ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                                                </div>
+                                            </div>
                                         </div>
+
+                                        {expandedLogId === log.id && (
+                                            <div className="px-4 pb-4 pt-0 border-t border-emerald-100/20 bg-emerald-50/20 animate-fadeIn">
+                                                <div className="flex flex-col gap-4 mt-4">
+                                                    {(log.photoUrl || log.photo) ? (
+                                                        <div className="w-full bg-black/5 rounded-xl overflow-hidden shadow-sm" onClick={(e) => { e.stopPropagation(); setViewImage(log.photoUrl || log.photo); }}>
+                                                            <img src={log.photoUrl || log.photo} alt="Evidencia" className="w-full h-auto max-h-[400px] object-contain mx-auto" />
+                                                        </div>
+                                                    ) : (
+                                                        <div className="w-full h-24 rounded-xl bg-emerald-100/50 flex flex-col items-center justify-center text-emerald-800/30 border-2 border-dashed border-emerald-200">
+                                                            <Camera size={24} />
+                                                            <span className="text-[10px] font-bold uppercase mt-1">Sin foto</span>
+                                                        </div>
+                                                    )}
+
+                                                    <div className="grid grid-cols-2 gap-3 text-xs text-emerald-900">
+                                                        <div className="col-span-2">
+                                                            <span className="text-[9px] font-bold text-emerald-800/40 uppercase tracking-wider block mb-1">Nota</span>
+                                                            <div className="bg-white/60 p-2 rounded-lg italic border border-emerald-50 text-emerald-950">"{log.notes || 'Sin notas'}"</div>
+                                                        </div>
+
+                                                        <div>
+                                                            <span className="text-[9px] font-bold text-emerald-800/40 uppercase tracking-wider block">Orientación</span>
+                                                            <span className="font-bold">{log.orientation || '-'}</span>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-[9px] font-bold text-emerald-800/40 uppercase tracking-wider block">Semillas/Hoyo</span>
+                                                            <span className="font-bold">{log.quantity || '1'}</span>
+                                                        </div>
+
+                                                        <div>
+                                                            <span className="text-[9px] font-bold text-emerald-800/40 uppercase tracking-wider block">Sustrato</span>
+                                                            <div className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-bold text-[10px] uppercase ${log.withSubstrate ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-400'}`}>{log.withSubstrate ? "SÍ" : "NO"}</div>
+                                                        </div>
+                                                        <div>
+                                                            <span className="text-[9px] font-bold text-emerald-800/40 uppercase tracking-wider block">Protector</span>
+                                                            <div className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-bold text-[10px] uppercase ${log.withProtector ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-400'}`}>{log.withProtector ? "SÍ" : "NO"}</div>
+                                                        </div>
+
+                                                        <div className="col-span-2">
+                                                            <span className="text-[9px] font-bold text-emerald-800/40 uppercase tracking-wider block">Tratamiento</span>
+                                                            <span className="font-medium">{seeds.find(s => s.id === log.seedId)?.treatment || 'Ninguno'}</span>
+                                                        </div>
+
+                                                        <div className="col-span-2">
+                                                            <span className="text-[9px] font-bold text-emerald-800/40 uppercase tracking-wider block">GPS</span>
+                                                            {log.location?.lat ? (
+                                                                <div className="flex items-center gap-2">
+                                                                    <MapPin size={14} className="text-emerald-400" />
+                                                                    <span className="font-mono">{log.location.lat.toFixed(6)}, {log.location.lng.toFixed(6)}</span>
+                                                                    <span className="text-[9px] bg-white px-1 rounded border border-emerald-100">±{log.location.acc?.toFixed(0)}m</span>
+                                                                </div>
+                                                            ) : <span className="text-gray-400 italic">Sin ubicación</span>}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 ))}
                             </div>
 
                             {/* Controles de paginación */}
-                            {totalPages > 1 && (
-                                <div className="flex items-center justify-center gap-2 pt-2">
-                                    <button
-                                        onClick={() => goToPage(currentPage - 1)}
-                                        disabled={currentPage === 1}
-                                        className="w-9 h-9 flex items-center justify-center bg-emerald-100 text-emerald-700 rounded-xl font-bold text-sm disabled:opacity-30 disabled:cursor-not-allowed hover:bg-emerald-200 transition-colors"
-                                    >
-                                        ←
-                                    </button>
+                            {
+                                totalPages > 1 && (
+                                    <div className="flex items-center justify-center gap-2 pt-2">
+                                        <button
+                                            onClick={() => goToPage(currentPage - 1)}
+                                            disabled={currentPage === 1}
+                                            className="w-9 h-9 flex items-center justify-center bg-emerald-100 text-emerald-700 rounded-xl font-bold text-sm disabled:opacity-30 disabled:cursor-not-allowed hover:bg-emerald-200 transition-colors"
+                                        >
+                                            ←
+                                        </button>
 
-                                    {/* Números de página */}
-                                    <div className="flex gap-1">
-                                        {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                                            let pageNum;
-                                            if (totalPages <= 5) {
-                                                pageNum = i + 1;
-                                            } else if (currentPage <= 3) {
-                                                pageNum = i + 1;
-                                            } else if (currentPage >= totalPages - 2) {
-                                                pageNum = totalPages - 4 + i;
-                                            } else {
-                                                pageNum = currentPage - 2 + i;
-                                            }
-                                            return (
-                                                <button
-                                                    key={pageNum}
-                                                    onClick={() => goToPage(pageNum)}
-                                                    className={`w-9 h-9 flex items-center justify-center rounded-xl font-bold text-sm transition-colors ${currentPage === pageNum
-                                                        ? 'bg-emerald-600 text-white'
-                                                        : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
-                                                        }`}
-                                                >
-                                                    {pageNum}
-                                                </button>
-                                            );
-                                        })}
+                                        {/* Números de página */}
+                                        <div className="flex gap-1">
+                                            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                                                let pageNum;
+                                                if (totalPages <= 5) {
+                                                    pageNum = i + 1;
+                                                } else if (currentPage <= 3) {
+                                                    pageNum = i + 1;
+                                                } else if (currentPage >= totalPages - 2) {
+                                                    pageNum = totalPages - 4 + i;
+                                                } else {
+                                                    pageNum = currentPage - 2 + i;
+                                                }
+                                                return (
+                                                    <button
+                                                        key={pageNum}
+                                                        onClick={() => goToPage(pageNum)}
+                                                        className={`w-9 h-9 flex items-center justify-center rounded-xl font-bold text-sm transition-colors ${currentPage === pageNum
+                                                            ? 'bg-emerald-600 text-white'
+                                                            : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                                                            }`}
+                                                    >
+                                                        {pageNum}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+
+                                        <button
+                                            onClick={() => goToPage(currentPage + 1)}
+                                            disabled={currentPage === totalPages}
+                                            className="w-9 h-9 flex items-center justify-center bg-emerald-100 text-emerald-700 rounded-xl font-bold text-sm disabled:opacity-30 disabled:cursor-not-allowed hover:bg-emerald-200 transition-colors"
+                                        >
+                                            →
+                                        </button>
                                     </div>
-
-                                    <button
-                                        onClick={() => goToPage(currentPage + 1)}
-                                        disabled={currentPage === totalPages}
-                                        className="w-9 h-9 flex items-center justify-center bg-emerald-100 text-emerald-700 rounded-xl font-bold text-sm disabled:opacity-30 disabled:cursor-not-allowed hover:bg-emerald-200 transition-colors"
-                                    >
-                                        →
-                                    </button>
-                                </div>
-                            )}
+                                )
+                            }
                         </>
                     )}
-                </div>
+                </div >
             )}
 
-            {viewImage && (
-                <div className="fixed inset-0 z-[60] bg-black flex items-center justify-center p-4 animate-fadeIn" onClick={() => setViewImage(null)}>
-                    <button onClick={() => setViewImage(null)} className="absolute top-4 right-4 text-white bg-white/20 p-2 rounded-full backdrop-blur-md">
-                        <X size={24} />
-                    </button>
-                    <img src={viewImage} className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" />
-                </div>
-            )}
-        </div>
+            {
+                viewImage && (
+                    <div className="fixed inset-0 z-[60] bg-black flex items-center justify-center p-4 animate-fadeIn" onClick={() => setViewImage(null)}>
+                        <button onClick={() => setViewImage(null)} className="absolute top-4 right-4 text-white bg-white/20 p-2 rounded-full backdrop-blur-md">
+                            <X size={24} />
+                        </button>
+                        <img src={viewImage} className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" />
+                    </div>
+                )
+            }
+        </div >
     );
 };
 
