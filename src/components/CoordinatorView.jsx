@@ -5,7 +5,7 @@ import SowingForm from './SowingForm';
 import {
     Leaf, Users, MapPin, ClipboardList, PlusCircle, Save, LogOut, Info,
     Download, Trash2, Edit2, Map as MapIcon, Table as TableIcon, X, Camera,
-    Search, ChevronLeft, ChevronRight, ArrowUpDown
+    Search, ChevronLeft, ChevronRight, ArrowUpDown, UploadCloud
 } from 'lucide-react';
 import MapView from './MapView';
 import { compressImage } from '../utils/imageUtils';
@@ -633,9 +633,14 @@ const CoordinatorView = ({ db, appId, campaignId, seeds, groups, storage, onRese
                                                                 <div className="flex flex-col md:flex-row gap-6">
                                                                     {/* Foto */}
                                                                     <div className="shrink-0">
-                                                                        {(log.photoUrl || log.photo) ? (
+                                                                        {(log.photoUrl && log.photoUrl !== 'PENDING') || (log.photo && !log.photoUrl) ? (
                                                                             <div className="w-full md:w-36 h-36 rounded-2xl overflow-hidden border-4 border-white shadow-sm cursor-pointer hover:shadow-md transition-all" onClick={() => setViewImage(log.photoUrl || log.photo)}>
                                                                                 <img src={log.photoUrl || log.photo} alt="Evidencia" className="w-full h-full object-cover hover:scale-110 transition-transform duration-500" />
+                                                                            </div>
+                                                                        ) : log.photoUrl === 'PENDING' ? (
+                                                                            <div className="w-full md:w-36 h-36 rounded-2xl bg-amber-100/50 flex flex-col items-center justify-center text-amber-800/50 border-4 border-white shadow-sm">
+                                                                                <UploadCloud size={24} className="animate-pulse" />
+                                                                                <span className="text-[10px] font-bold uppercase mt-2 text-center px-2">Subida Pendiente</span>
                                                                             </div>
                                                                         ) : (
                                                                             <div className="w-full md:w-36 h-36 rounded-2xl bg-emerald-100/50 flex flex-col items-center justify-center text-emerald-800/30 border-4 border-white shadow-sm">

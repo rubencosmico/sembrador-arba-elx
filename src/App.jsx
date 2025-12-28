@@ -17,6 +17,7 @@ import CampaignManager from './components/CampaignManager';
 // Utils
 import MigratePhotos from './utils/migrate-photos';
 import StorageDiagnostic from './components/StorageDiagnostic';
+import { useOfflineQueue } from './hooks/useOfflineQueue';
 
 function App() {
     const [user, setUser] = useState(null);
@@ -29,6 +30,9 @@ function App() {
     const [groups, setGroups] = useState([]);
     const [logs, setLogs] = useState([]); // Only fetched for coordinator usually, or small scale
     const [loading, setLoading] = useState(true);
+
+    // Offline Queue
+    const { isOnline, pendingCount, saveToQueue } = useOfflineQueue(storage, db);
 
     // Auth
     useEffect(() => {
@@ -125,6 +129,9 @@ function App() {
                 storage={storage}
                 onResetRole={() => setRole(null)}
                 isReadOnly={isReadOnly}
+                isOnline={isOnline}
+                pendingCount={pendingCount}
+                saveToQueue={saveToQueue}
             />
         );
     }
@@ -137,6 +144,9 @@ function App() {
                 storage={storage}
                 onResetRole={() => setRole(null)}
                 isReadOnly={isReadOnly}
+                isOnline={isOnline}
+                pendingCount={pendingCount}
+                saveToQueue={saveToQueue}
             />
         );
     }

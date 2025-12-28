@@ -4,13 +4,14 @@ import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import {
     Users, LogOut, ArrowRight, AlertTriangle, History,
     Leaf, X, HelpCircle, PlusCircle, Camera, MapPin, Trash2,
-    Search, ChevronDown, ChevronUp, Pencil
+    Search, ChevronDown, ChevronUp, Pencil, Wifi, WifiOff, UploadCloud
 } from 'lucide-react';
 import ManualView from './ManualView';
 import SowingForm from './SowingForm';
 import { filterAndSortLogs } from '../utils/logUtils';
+import { getOfflinePhoto } from '../utils/db'; // Import DB utility
 
-const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onResetRole, isReadOnly }) => {
+const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onResetRole, isReadOnly, isOnline, pendingCount, saveToQueue }) => {
     const [selectedGroupId, setSelectedGroupId] = useState(null);
     const [groupStats, setGroupStats] = useState({});
     const [showManual, setShowManual] = useState(false);
@@ -108,6 +109,35 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
         setCurrentPage(1);
     }, [searchTerm, sortField, sortDirection, logsPerPage]);
 
+    // Cargar imágenes locales para logs pendientes
+    const [localImages, setLocalImages] = useState({});
+
+    useEffect(() => {
+        const loadLocalImages = async () => {
+            const pendingLogs = allTeamLogs.filter(l => l.photoUrl === 'PENDING');
+            if (pendingLogs.length === 0) return;
+
+            const newImages = {};
+            let hasNew = false;
+            for (const log of pendingLogs) {
+                if (!localImages[log.id]) {
+                    try {
+                        const record = await getOfflinePhoto(log.id);
+                        if (record && record.photoData) {
+                            newImages[log.id] = record.photoData;
+                            hasNew = true;
+                        }
+                    } catch (e) { console.error(e) }
+                }
+            }
+            if (hasNew) {
+                setLocalImages(prev => ({ ...prev, ...newImages }));
+            }
+        };
+        loadLocalImages();
+    }, [allTeamLogs]);
+
+
     // Logs filtrados y ordenados (sobre todos los logs del equipo)
     const filteredAndSortedLogs = useMemo(() => {
         return filterAndSortLogs(allTeamLogs, searchTerm, sortField, sortDirection);
@@ -153,7 +183,6 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
         setIsSubmitting(true);
         try {
             const selectedGroup = groups.find(g => g.id === selectedGroupId);
-            // data.seedName ya viene de SowingForm, pero si queremos recalcular por seguridad:
             const seed = seeds.find(s => s.id === data.seedId);
             const seedName = seed ? seed.species : (data.seedName || 'Desconocida');
 
@@ -171,38 +200,65 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
             };
 
             let photoUrl = editingLog?.photoUrl || null;
+            let syncStatus = editingLog?.syncStatus || 'synced';
 
             if (data.photoDeleted) {
                 photoUrl = null;
+                syncStatus = 'synced';
             }
 
-            if (data.photo && storage) {
-                const logId = editingLog ? editingLog.id : `${Date.now()}_${userId}_${Math.random().toString(36).substr(2, 9)}`;
-                const photoRef = ref(storage, `photos/logs/${logId}_${Date.now()}.jpg`);
-                await uploadString(photoRef, data.photo, 'data_url');
-                photoUrl = await getDownloadURL(photoRef);
+            // Decide upload strategy
+            const logId = editingLog ? editingLog.id : `${Date.now()}_${userId}_${Math.random().toString(36).substr(2, 9)}`;
+
+            if (data.photo && storage && !data.photoDeleted) {
+                // Check if it is a NEW photo (data URL) or existing URL
+                if (data.photo.startsWith('data:')) {
+                    if (isOnline) {
+                        try {
+                            const photoRef = ref(storage, `photos/logs/${logId}_${Date.now()}.jpg`);
+                            await uploadString(photoRef, data.photo, 'data_url');
+                            photoUrl = await getDownloadURL(photoRef);
+                            syncStatus = 'synced';
+                        } catch (e) {
+                            console.warn("Upload failed, falling back to offline queue", e);
+                            // Fallback to offline
+                            await saveToQueue(logId, data.photo, `photos/logs/${logId}_${Date.now()}.jpg`, `artifacts/${appId}/public/data/logs/${logId}`);
+                            photoUrl = 'PENDING';
+                            syncStatus = 'pending_photo';
+                        }
+                    } else {
+                        // Offline
+                        await saveToQueue(logId, data.photo, `photos/logs/${logId}_${Date.now()}.jpg`, `artifacts/${appId}/public/data/logs/${logId}`);
+                        photoUrl = 'PENDING';
+                        syncStatus = 'pending_photo';
+                    }
+                }
             }
+
+            const docData = {
+                ...commonData,
+                photoUrl,
+                syncStatus,
+                campaignId,
+                groupId: selectedGroupId,
+                groupName: selectedGroup?.name || 'Desconocido',
+                userId,
+                timestamp: serverTimestamp() // This will resolve locally instantly
+            };
 
             if (editingLog) {
                 await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'logs', editingLog.id), {
                     ...commonData,
                     photoUrl,
+                    syncStatus,
                     updatedAt: serverTimestamp()
                 });
-                // Update local list
-                setAllTeamLogs(prev => prev.map(l => l.id === editingLog.id ? { ...l, ...commonData, photoUrl, updatedAt: { seconds: Date.now() / 1000 } } : l));
+                // Optimistic update
+                setAllTeamLogs(prev => prev.map(l => l.id === editingLog.id ? { ...l, ...commonData, photoUrl, syncStatus, updatedAt: { seconds: Date.now() / 1000 } } : l));
             } else {
-                const logData = {
-                    ...commonData,
-                    photoUrl,
-                    campaignId,
-                    groupId: selectedGroupId,
-                    groupName: selectedGroup?.name || 'Desconocido',
-                    userId,
-                    timestamp: serverTimestamp()
-                };
-                const docRef = await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'logs'), logData);
-                const newLog = { id: docRef.id, ...logData, timestamp: { seconds: Date.now() / 1000 } };
+                const docRef = await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'logs'), docData);
+                // Warning: addDoc throws if offline? No, it works with persistence enabled.
+                const newLog = { id: docRef.id, ...docData, timestamp: { seconds: Date.now() / 1000 } };
                 setAllTeamLogs(prev => [newLog, ...prev]);
             }
 
@@ -323,15 +379,23 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
                     </button>
                     <div>
                         <div className="flex items-center gap-1.5 mb-0.5">
-                            <span className={`w-2 h-2 rounded-full animate-pulse ${isReadOnly ? 'bg-red-500' : 'bg-amber-500'}`}></span>
-                            <span className={`text-[10px] font-bold uppercase tracking-widest ${isReadOnly ? 'text-red-900/40' : 'text-amber-900/40'}`}>
-                                {isReadOnly ? 'Sólo lectura' : 'Misión en curso'}
+                            <span className={`w-2 h-2 rounded-full animate-pulse ${isReadOnly ? 'bg-red-500' : (!isOnline ? 'bg-gray-400' : 'bg-amber-500')}`}></span>
+                            <span className={`text-[10px] font-bold uppercase tracking-widest ${isReadOnly ? 'text-red-900/40' : (!isOnline ? 'text-gray-500' : 'text-amber-900/40')}`}>
+                                {isReadOnly ? 'Sólo lectura' : (!isOnline ? 'Sin Conexión' : 'Misión en curso')}
                             </span>
+                            {!isReadOnly && (
+                                !isOnline ? <WifiOff size={10} className="text-gray-400 ml-1" /> : <Wifi size={10} className="text-emerald-400 ml-1" />
+                            )}
                         </div>
                         <h2 className="text-xl font-extrabold text-emerald-950 leading-none">{selectedGroup.name}</h2>
                     </div>
                 </div>
-                <div className="bg-emerald-950 text-white px-4 py-2 rounded-2xl shadow-lg border border-emerald-800 flex flex-col items-center min-w-[70px]">
+                <div className="bg-emerald-950 text-white px-4 py-2 rounded-2xl shadow-lg border border-emerald-800 flex flex-col items-center min-w-[70px] relative">
+                    {pendingCount > 0 && !isReadOnly && (
+                        <div className="absolute -top-2 -left-2 bg-amber-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-md border-2 border-white flex items-center gap-1">
+                            <UploadCloud size={10} /> {pendingCount}
+                        </div>
+                    )}
                     <span className="text-[9px] font-bold uppercase tracking-tighter text-emerald-400">Total</span>
                     <span className="text-xl font-black leading-none">{totalHoles}</span>
                 </div>
@@ -527,16 +591,24 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
                                         {expandedLogId === log.id && (
                                             <div className="px-4 pb-4 pt-0 border-t border-emerald-100/20 bg-emerald-50/20 animate-fadeIn">
                                                 <div className="flex flex-col gap-4 mt-4">
-                                                    {(log.photoUrl || log.photo) ? (
-                                                        <div className="w-full bg-black/5 rounded-xl overflow-hidden shadow-sm" onClick={(e) => { e.stopPropagation(); setViewImage(log.photoUrl || log.photo); }}>
-                                                            <img src={log.photoUrl || log.photo} alt="Evidencia" className="w-full h-auto max-h-[400px] object-contain mx-auto" />
-                                                        </div>
-                                                    ) : (
-                                                        <div className="w-full h-24 rounded-xl bg-emerald-100/50 flex flex-col items-center justify-center text-emerald-800/30 border-2 border-dashed border-emerald-200">
-                                                            <Camera size={24} />
-                                                            <span className="text-[10px] font-bold uppercase mt-1">Sin foto</span>
-                                                        </div>
-                                                    )}
+                                                    {(() => {
+                                                        const displayUrl = (log.photoUrl === 'PENDING' ? localImages[log.id] : log.photoUrl) || log.photo;
+                                                        return displayUrl ? (
+                                                            <div className="w-full bg-black/5 rounded-xl overflow-hidden shadow-sm relative" onClick={(e) => { e.stopPropagation(); setViewImage(displayUrl); }}>
+                                                                <img src={displayUrl} alt="Evidencia" className={`w-full h-auto max-h-[400px] object-contain mx-auto ${log.photoUrl === 'PENDING' ? 'opacity-70 grayscale-[0.5]' : ''}`} />
+                                                                {log.photoUrl === 'PENDING' && (
+                                                                    <div className="absolute top-2 right-2 bg-amber-500 text-white text-[10px] font-bold px-2 py-1 rounded-full flex items-center gap-1 shadow-md">
+                                                                        <UploadCloud size={10} /> Pendiente
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        ) : (
+                                                            <div className="w-full h-24 rounded-xl bg-emerald-100/50 flex flex-col items-center justify-center text-emerald-800/30 border-2 border-dashed border-emerald-200">
+                                                                <Camera size={24} />
+                                                                <span className="text-[10px] font-bold uppercase mt-1">Sin foto</span>
+                                                            </div>
+                                                        );
+                                                    })()}
 
                                                     <div className="grid grid-cols-2 gap-3 text-xs text-emerald-900">
                                                         <div className="col-span-2">
