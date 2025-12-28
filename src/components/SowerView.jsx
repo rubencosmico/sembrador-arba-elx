@@ -276,7 +276,7 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
 
             if (editingLog) {
                 // UPDATE EXISTING LOG
-                let photoUrl = editingLog.photoUrl;
+                let photoUrl = editingLog.photoUrl || null;
                 if (formData.photo && storage) {
                     const logId = editingLog.id; // Keep same ID for photo path logic usually, or new. Let's use new path to avoid cache issues or complexities.
                     const photoRef = ref(storage, `photos/logs/${logId}_${Date.now()}.jpg`);
@@ -314,7 +314,9 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
                     logData.photoUrl = photoUrl;
                 }
 
-                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'logs'), logData);
+                const docRef = await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'logs'), logData);
+                const newLog = { id: docRef.id, ...logData, timestamp: { seconds: Date.now() / 1000 } };
+                setAllTeamLogs(prev => [newLog, ...prev]);
             }
 
             cancelEditing(); // Resets form and clears editingLog

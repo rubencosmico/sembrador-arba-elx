@@ -14,6 +14,7 @@ import SowerView from './components/SowerView';
 // Utils
 import { migrateOrphanData } from './utils/migration';
 import MigratePhotos from './utils/migrate-photos';
+import StorageDiagnostic from './components/StorageDiagnostic';
 
 // --- CONFIG ---
 const getFirebaseConfig = () => {
@@ -89,6 +90,10 @@ function App() {
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('migrate') === 'photos') {
         return <MigratePhotos db={db} appId={appId} storage={storage} />;
+    }
+
+    if (urlParams.get('diagnostic') === 'true') {
+        return <StorageDiagnostic db={db} appId={appId} storage={storage} />;
     }
 
     // 1. Select Campaign
