@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import ManualView from './ManualView';
 import SowingForm from './SowingForm';
+import { filterAndSortLogs } from '../utils/logUtils';
 
 const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onResetRole }) => {
     const [selectedGroupId, setSelectedGroupId] = useState(null);
@@ -102,36 +103,7 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
 
     // Logs filtrados y ordenados (sobre todos los logs del equipo)
     const filteredAndSortedLogs = useMemo(() => {
-        let result = [...allTeamLogs];
-
-        // Filtrar por búsqueda
-        if (searchTerm.trim()) {
-            const term = searchTerm.toLowerCase();
-            result = result.filter(log =>
-                (log.seedName || '').toLowerCase().includes(term) ||
-                (log.microsite || '').toLowerCase().includes(term)
-            );
-        }
-
-        // Ordenar
-        result.sort((a, b) => {
-            let valA, valB;
-            if (sortField === 'seedName') {
-                valA = (a.seedName || '').toLowerCase();
-                valB = (b.seedName || '').toLowerCase();
-            } else if (sortField === 'microsite') {
-                valA = (a.microsite || '').toLowerCase();
-                valB = (b.microsite || '').toLowerCase();
-            }
-
-            if (sortDirection === 'asc') {
-                return valA > valB ? 1 : valA < valB ? -1 : 0;
-            } else {
-                return valA < valB ? 1 : valA > valB ? -1 : 0;
-            }
-        });
-
-        return result;
+        return filterAndSortLogs(allTeamLogs, searchTerm, sortField, sortDirection);
     }, [allTeamLogs, searchTerm, sortField, sortDirection]);
 
     // Cálculos de paginación

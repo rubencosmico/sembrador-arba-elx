@@ -8,6 +8,9 @@ import {
     Search, ChevronLeft, ChevronRight, ArrowUpDown
 } from 'lucide-react';
 import MapView from './MapView';
+import { compressImage } from '../utils/imageUtils';
+import { generateLogCSV } from '../utils/csvUtils';
+import { filterAndSortLogs } from '../utils/logUtils';
 
 const CoordinatorView = ({ db, appId, campaignId, seeds, groups, storage, onResetRole }) => {
 
@@ -52,43 +55,7 @@ const CoordinatorView = ({ db, appId, campaignId, seeds, groups, storage, onRese
 
     // Derived Logic for Display
     const filteredAndSortedLogs = React.useMemo(() => {
-        let result = [...logs];
-
-        // 1. Search
-        if (searchTerm) {
-            const term = searchTerm.toLowerCase();
-            result = result.filter(log =>
-                log.groupName?.toLowerCase().includes(term) ||
-                log.seedName?.toLowerCase().includes(term) ||
-                log.microsite?.toLowerCase().includes(term) ||
-                log.notes?.toLowerCase().includes(term)
-            );
-        }
-
-        // 2. Sort
-        result.sort((a, b) => {
-            let valA = a[sortField];
-            let valB = b[sortField];
-
-            // Specific handling
-            if (sortField === 'timestamp') {
-                valA = a.timestamp?.seconds || 0;
-                valB = b.timestamp?.seconds || 0;
-            } else if (sortField === 'holeCount') {
-                valA = parseInt(a.holeCount) || 0;
-                valB = parseInt(b.holeCount) || 0;
-            } else {
-                // String comparison
-                valA = (valA || '').toString().toLowerCase();
-                valB = (valB || '').toString().toLowerCase();
-            }
-
-            if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
-            if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
-            return 0;
-        });
-
-        return result;
+        return filterAndSortLogs(logs, searchTerm, sortField, sortDirection);
     }, [logs, searchTerm, sortField, sortDirection]);
 
     const totalPages = Math.ceil(filteredAndSortedLogs.length / logsPerPage);
@@ -119,30 +86,7 @@ const CoordinatorView = ({ db, appId, campaignId, seeds, groups, storage, onRese
     const [editingGroup, setEditingGroup] = useState(null);
     const [verifyingDelete, setVerifyingDelete] = useState(false);
 
-    const compressImage = (file, maxWidth = 800) => {
-        return new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = (event) => {
-                const img = new Image();
-                img.src = event.target.result;
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    let width = img.width;
-                    let height = img.height;
-                    if (width > maxWidth) {
-                        height = (maxWidth / width) * height;
-                        width = maxWidth;
-                    }
-                    canvas.width = width;
-                    canvas.height = height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, width, height);
-                    resolve(canvas.toDataURL('image/jpeg', 0.7));
-                };
-            };
-        });
-    };
+    // compressImage imported from utils
 
     const handlePhotoChange = async (e) => {
         const file = e.target.files[0];
@@ -367,34 +311,7 @@ const CoordinatorView = ({ db, appId, campaignId, seeds, groups, storage, onRese
     };
 
     const exportCSV = () => {
-        const headers = ["Fecha", "Hora", "Jornada", "Equipo", "Especie", "Tratamiento", "Micrositio", "Orientación", "Semillas/Hoyo", "Protector", "Sustrato", "Lat", "Lng", "Golpes", "Notas", "Foto URL"];
-        const rows = logs.map(log => {
-            const date = log.timestamp?.seconds ? new Date(log.timestamp.seconds * 1000) : null;
-            const seed = seeds.find(s => s.id === log.seedId);
-            return [
-                date ? date.toLocaleDateString() : '',
-                date ? date.toLocaleTimeString() : '',
-                campaignId,
-                log.groupName,
-                log.seedName,
-                seed?.treatment || '',
-                log.microsite,
-                log.orientation || '',
-                log.quantity || '1',
-                log.withProtector ? 'Sí' : 'No',
-                log.withSubstrate ? 'Sí' : 'No',
-                log.location?.lat || '',
-                log.location?.lng || '',
-                log.holeCount || 1,
-                `"${(log.notes || '').replace(/"/g, '""')}"`, // Escape quotes
-                log.photo || log.photoUrl || ''
-            ];
-        });
-
-        const csvContent = "data:text/csv;charset=utf-8,"
-            + headers.join(",") + "\n"
-            + rows.map(e => e.join(",")).join("\n");
-
+        const csvContent = generateLogCSV(logs, seeds, campaignId);
         const encodedUri = encodeURI(csvContent);
         const link = document.createElement("a");
         link.setAttribute("href", encodedUri);

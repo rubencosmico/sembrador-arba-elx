@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Camera, MapPin, Check, Shield, X, Save, Pencil, Trash2 } from 'lucide-react';
+import { compressImage } from '../utils/imageUtils';
 
 const SowingForm = ({
     initialData, // Object with existing data (for edit) or defaults
@@ -30,27 +31,8 @@ const SowingForm = ({
     const [isProcessingPhoto, setIsProcessingPhoto] = useState(false);
 
     // --- HELPERS ---
-    const compressImage = (file) => {
-        return new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = (event) => {
-                const img = new Image();
-                img.src = event.target.result;
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    let width = img.width;
-                    let height = img.height;
-                    const maxWidth = 800;
-                    if (width > maxWidth) { height = (maxWidth / width) * height; width = maxWidth; }
-                    canvas.width = width; canvas.height = height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, width, height);
-                    resolve(canvas.toDataURL('image/jpeg', 0.7));
-                };
-            };
-        });
-    };
+    // --- HELPERS ---
+    // compressImage imported from utils
 
     const handlePhotoChange = async (e) => {
         const file = e.target.files[0];

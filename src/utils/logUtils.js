@@ -5,6 +5,7 @@ export function filterAndSortLogs(logs, searchTerm, sortField, sortDirection) {
     if (searchTerm && searchTerm.trim()) {
         const term = searchTerm.toLowerCase();
         result = result.filter(log =>
+            (log.groupName || '').toLowerCase().includes(term) ||
             (log.seedName || '').toLowerCase().includes(term) ||
             (log.microsite || '').toLowerCase().includes(term) ||
             (log.notes || '').toLowerCase().includes(term)
