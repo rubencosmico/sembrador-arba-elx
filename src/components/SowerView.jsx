@@ -341,7 +341,8 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
                 img.src = event.target.result;
                 img.onload = () => {
                     const canvas = document.createElement('canvas');
-                    let width = img.width; height = img.height;
+                    let width = img.width;
+                    let height = img.height;
                     const maxWidth = 800;
                     if (width > maxWidth) { height = (maxWidth / width) * height; width = maxWidth; }
                     canvas.width = width; canvas.height = height;
