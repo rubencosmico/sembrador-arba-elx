@@ -31,6 +31,7 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
     const [gpsStatus, setGpsStatus] = useState('waiting');
     const [currentLocation, setCurrentLocation] = useState({ lat: null, lng: null, acc: null });
     const [viewImage, setViewImage] = useState(null);
+    const [isProcessingPhoto, setIsProcessingPhoto] = useState(false);
 
     // Estados para el cuaderno de campo con paginación
     const [searchTerm, setSearchTerm] = useState('');
@@ -355,8 +356,16 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
     const handlePhotoChange = async (e) => {
         const file = e.target.files[0];
         if (file) {
-            const compressed = await compressImage(file);
-            setFormData({ ...formData, photo: compressed });
+            setIsProcessingPhoto(true);
+            try {
+                const compressed = await compressImage(file);
+                setFormData({ ...formData, photo: compressed });
+            } catch (err) {
+                console.error("Error compressing photo", err);
+                alert("Error al procesar la foto. Inténtalo de nuevo.");
+            } finally {
+                setIsProcessingPhoto(false);
+            }
         }
     };
 
@@ -607,9 +616,13 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
                                 )}
                             </div>
 
-                            <button onClick={handleSow} disabled={isSubmitting} className="btn-premium w-full bg-emerald-700 hover:bg-emerald-800 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 mt-2">
+                            <button onClick={handleSow} disabled={isSubmitting || isProcessingPhoto} className={`btn-premium w-full text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 mt-2 ${isSubmitting || isProcessingPhoto ? 'bg-gray-400' : 'bg-emerald-700 hover:bg-emerald-800'}`}>
                                 <Save size={18} />
-                                <span>{isSubmitting ? 'Guardando...' : editingLog ? 'Actualizar Registro' : 'Registrar Siembra'}</span>
+                                <span>
+                                    {isSubmitting ? 'Guardando...' :
+                                        isProcessingPhoto ? 'Procesando Foto...' :
+                                            editingLog ? 'Actualizar Registro' : 'Registrar Siembra'}
+                                </span>
                             </button>
                         </section>
                     </div>
