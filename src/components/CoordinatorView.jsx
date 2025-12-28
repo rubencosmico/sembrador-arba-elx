@@ -5,14 +5,14 @@ import SowingForm from './SowingForm';
 import {
     Leaf, Users, MapPin, ClipboardList, PlusCircle, Save, LogOut, Info,
     Download, Trash2, Edit2, Map as MapIcon, Table as TableIcon, X, Camera,
-    Search, ChevronLeft, ChevronRight, ArrowUpDown, Settings, Power, Check
+    Search, ChevronLeft, ChevronRight, ArrowUpDown
 } from 'lucide-react';
 import MapView from './MapView';
 import { compressImage } from '../utils/imageUtils';
 import { generateLogCSV } from '../utils/csvUtils';
 import { filterAndSortLogs } from '../utils/logUtils';
 
-const CoordinatorView = ({ db, appId, campaignId, seeds, groups, storage, onResetRole }) => {
+const CoordinatorView = ({ db, appId, campaignId, seeds, groups, storage, onResetRole, isReadOnly }) => {
 
     // Local state for logs
     const [logs, setLogs] = useState([]);
@@ -26,46 +26,7 @@ const CoordinatorView = ({ db, appId, campaignId, seeds, groups, storage, onRese
     const [currentPage, setCurrentPage] = useState(1);
     const [logsPerPage, setLogsPerPage] = useState(10);
 
-    // --- Campaign Management State ---
-    const [allCampaigns, setAllCampaigns] = useState([]);
-    const [editingCampaign, setEditingCampaign] = useState(null);
-    const [newCampaignName, setNewCampaignName] = useState('');
-    const [isCreatingCampaign, setIsCreatingCampaign] = useState(false);
 
-    useEffect(() => {
-        const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'campaigns'), orderBy('createdAt', 'desc'));
-        const unsubscribe = onSnapshot(q, (snap) => {
-            setAllCampaigns(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        });
-        return () => unsubscribe();
-    }, [db, appId]);
-
-    const handleCreateCampaign = async (e) => {
-        e.preventDefault();
-        if (!newCampaignName.trim()) return;
-        try {
-            await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'campaigns'), {
-                name: newCampaignName,
-                createdAt: serverTimestamp(),
-                status: 'active'
-            });
-            setNewCampaignName('');
-            setIsCreatingCampaign(false);
-        } catch (e) {
-            console.error(e);
-            alert("Error creando jornada");
-        }
-    };
-
-    const handleUpdateCampaign = async (id, data) => {
-        try {
-            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'campaigns', id), data);
-            setEditingCampaign(null);
-        } catch (e) {
-            console.error(e);
-            alert("Error actualizando jornada");
-        }
-    };
 
     const fetchLogs = async () => {
         if (loadingLogs) return;
@@ -389,8 +350,7 @@ const CoordinatorView = ({ db, appId, campaignId, seeds, groups, storage, onRese
                     {[
                         { id: 'seeds', label: 'Inventario', icon: Leaf },
                         { id: 'groups', label: 'Equipos y Logística', icon: Users },
-                        { id: 'data', label: 'Resultados', icon: TableIcon },
-                        { id: 'campaigns', label: 'Jornadas', icon: Settings }
+                        { id: 'data', label: 'Resultados', icon: TableIcon }
                     ].map(tab => (
                         <button
                             key={tab.id}
@@ -409,52 +369,54 @@ const CoordinatorView = ({ db, appId, campaignId, seeds, groups, storage, onRese
                 {activeTab === 'seeds' && (
                     <div className="space-y-6 animate-slideUp">
                         {/* Seed Form */}
-                        <section className="glass-card p-6 rounded-3xl shadow-sm border border-emerald-100/50">
-                            <h3 className="text-lg font-bold text-emerald-950 mb-5 flex items-center gap-2">
-                                <PlusCircle className="text-emerald-600" size={20} />
-                                Registrar Lote
-                            </h3>
-                            <form onSubmit={handleAddSeed} className="space-y-4">
-                                <div className="space-y-1.5">
-                                    <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-widest px-1">Especie</label>
-                                    <input placeholder="Ej: Algarrobo" className="w-full p-4 bg-emerald-900/5 border border-transparent rounded-2xl focus:bg-white focus:border-emerald-500/50 outline-none transition-all font-medium" value={newSeed.species} onChange={e => setNewSeed({ ...newSeed, species: e.target.value })} />
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
+                        {!isReadOnly && (
+                            <section className="glass-card p-6 rounded-3xl shadow-sm border border-emerald-100/50">
+                                <h3 className="text-lg font-bold text-emerald-950 mb-5 flex items-center gap-2">
+                                    <PlusCircle className="text-emerald-600" size={20} />
+                                    Registrar Lote
+                                </h3>
+                                <form onSubmit={handleAddSeed} className="space-y-4">
                                     <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-widest px-1">Origen</label>
-                                        <input placeholder="Ej: Elena" className="w-full p-4 bg-emerald-900/5 border border-transparent rounded-2xl focus:bg-white focus:border-emerald-500/50 outline-none transition-all font-medium" value={newSeed.provider} onChange={e => setNewSeed({ ...newSeed, provider: e.target.value })} />
+                                        <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-widest px-1">Especie</label>
+                                        <input placeholder="Ej: Algarrobo" className="w-full p-4 bg-emerald-900/5 border border-transparent rounded-2xl focus:bg-white focus:border-emerald-500/50 outline-none transition-all font-medium" value={newSeed.species} onChange={e => setNewSeed({ ...newSeed, species: e.target.value })} />
                                     </div>
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-widest px-1">Tratamiento</label>
-                                        <input placeholder="Ej: Lijada" className="w-full p-4 bg-emerald-900/5 border border-transparent rounded-2xl focus:bg-white focus:border-emerald-500/50 outline-none transition-all font-medium" value={newSeed.treatment} onChange={e => setNewSeed({ ...newSeed, treatment: e.target.value })} />
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-widest px-1">Origen</label>
+                                            <input placeholder="Ej: Elena" className="w-full p-4 bg-emerald-900/5 border border-transparent rounded-2xl focus:bg-white focus:border-emerald-500/50 outline-none transition-all font-medium" value={newSeed.provider} onChange={e => setNewSeed({ ...newSeed, provider: e.target.value })} />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-widest px-1">Tratamiento</label>
+                                            <input placeholder="Ej: Lijada" className="w-full p-4 bg-emerald-900/5 border border-transparent rounded-2xl focus:bg-white focus:border-emerald-500/50 outline-none transition-all font-medium" value={newSeed.treatment} onChange={e => setNewSeed({ ...newSeed, treatment: e.target.value })} />
+                                        </div>
                                     </div>
-                                </div>
-                                {/* Photo */}
-                                <div className="space-y-3">
-                                    <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-widest px-1 block">Foto (Opcional)</label>
-                                    <div className="flex items-center gap-4">
-                                        {!newSeed.photo ? (
-                                            <label className="flex-1 flex flex-col items-center justify-center p-6 border-2 border-dashed border-emerald-100 rounded-2xl bg-emerald-50/30 hover:bg-emerald-50 cursor-pointer group">
-                                                <Camera className="text-emerald-300 group-hover:text-emerald-500 mb-2" size={32} />
-                                                <span className="text-xs font-bold text-emerald-800/40 uppercase">Tomar Foto</span>
-                                                <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoChange} />
-                                            </label>
-                                        ) : (
-                                            <div className="relative w-full aspect-video rounded-2xl overflow-hidden border-2 border-emerald-500">
-                                                <img src={newSeed.photo} className="w-full h-full object-cover" alt="Preview" />
-                                                <button type="button" onClick={() => setNewSeed({ ...newSeed, photo: null })} className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full">
-                                                    <X size={16} />
-                                                </button>
-                                            </div>
-                                        )}
+                                    {/* Photo */}
+                                    <div className="space-y-3">
+                                        <label className="text-[10px] font-bold text-emerald-800/40 uppercase tracking-widest px-1 block">Foto (Opcional)</label>
+                                        <div className="flex items-center gap-4">
+                                            {!newSeed.photo ? (
+                                                <label className="flex-1 flex flex-col items-center justify-center p-6 border-2 border-dashed border-emerald-100 rounded-2xl bg-emerald-50/30 hover:bg-emerald-50 cursor-pointer group">
+                                                    <Camera className="text-emerald-300 group-hover:text-emerald-500 mb-2" size={32} />
+                                                    <span className="text-xs font-bold text-emerald-800/40 uppercase">Tomar Foto</span>
+                                                    <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhotoChange} />
+                                                </label>
+                                            ) : (
+                                                <div className="relative w-full aspect-video rounded-2xl overflow-hidden border-2 border-emerald-500">
+                                                    <img src={newSeed.photo} className="w-full h-full object-cover" alt="Preview" />
+                                                    <button type="button" onClick={() => setNewSeed({ ...newSeed, photo: null })} className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full">
+                                                        <X size={16} />
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
-                                </div>
-                                <button type="submit" className="btn-premium w-full bg-emerald-700 hover:bg-emerald-800 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 mt-2">
-                                    <Save size={18} />
-                                    <span>Guardar en Inventario</span>
-                                </button>
-                            </form>
-                        </section>
+                                    <button type="submit" className="btn-premium w-full bg-emerald-700 hover:bg-emerald-800 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 mt-2">
+                                        <Save size={18} />
+                                        <span>Guardar en Inventario</span>
+                                    </button>
+                                </form>
+                            </section>
+                        )}
                         {/* List */}
                         <div className="space-y-3">
                             {seeds.map(seed => (
@@ -475,15 +437,17 @@ const CoordinatorView = ({ db, appId, campaignId, seeds, groups, storage, onRese
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="flex gap-2">
-                                        {seed.photo && (
-                                            <button onClick={() => setViewImage(seed.photo)} className="p-2 text-emerald-300 hover:text-emerald-600 rounded bg-emerald-50/50">
-                                                <Camera size={16} />
-                                            </button>
-                                        )}
-                                        <button onClick={() => setEditingSeed(seed)} className="text-emerald-300 hover:text-emerald-600 p-2 bg-emerald-50/50 rounded hover:bg-emerald-100"><Edit2 size={16} /></button>
-                                        <button onClick={() => handleDeleteSeed(seed.id)} disabled={verifyingDelete} className="text-red-300 hover:text-red-500 p-2 bg-red-50/50 rounded hover:bg-red-100"><Trash2 size={16} /></button>
-                                    </div>
+                                    {!isReadOnly && (
+                                        <div className="flex gap-2">
+                                            {seed.photo && (
+                                                <button onClick={() => setViewImage(seed.photo)} className="p-2 text-emerald-300 hover:text-emerald-600 rounded bg-emerald-50/50">
+                                                    <Camera size={16} />
+                                                </button>
+                                            )}
+                                            <button onClick={() => setEditingSeed(seed)} className="text-emerald-300 hover:text-emerald-600 p-2 bg-emerald-50/50 rounded hover:bg-emerald-100"><Edit2 size={16} /></button>
+                                            <button onClick={() => handleDeleteSeed(seed.id)} disabled={verifyingDelete} className="text-red-300 hover:text-red-500 p-2 bg-red-50/50 rounded hover:bg-red-100"><Trash2 size={16} /></button>
+                                        </div>
+                                    )}
                                 </div>
                             ))}
                         </div>
@@ -492,16 +456,18 @@ const CoordinatorView = ({ db, appId, campaignId, seeds, groups, storage, onRese
 
                 {activeTab === 'groups' && (
                     <div className="space-y-6 animate-slideUp">
-                        <section className="glass-card p-6 rounded-3xl shadow-sm border border-emerald-100/50">
-                            <h3 className="text-lg font-bold text-emerald-950 mb-5 flex items-center gap-2">
-                                <Users className="text-emerald-600" size={20} />
-                                Crear Equipo
-                            </h3>
-                            <form onSubmit={handleAddGroup} className="flex gap-3">
-                                <input placeholder="Nombre..." className="flex-1 p-4 bg-emerald-900/5 border border-transparent rounded-2xl focus:bg-white outline-none font-medium" value={newGroup} onChange={e => setNewGroup(e.target.value)} />
-                                <button type="submit" className="btn-premium bg-emerald-600 hover:bg-emerald-700 text-white px-6 rounded-2xl font-bold">Crear</button>
-                            </form>
-                        </section>
+                        {!isReadOnly && (
+                            <section className="glass-card p-6 rounded-3xl shadow-sm border border-emerald-100/50">
+                                <h3 className="text-lg font-bold text-emerald-950 mb-5 flex items-center gap-2">
+                                    <Users className="text-emerald-600" size={20} />
+                                    Crear Equipo
+                                </h3>
+                                <form onSubmit={handleAddGroup} className="flex gap-3">
+                                    <input placeholder="Nombre..." className="flex-1 p-4 bg-emerald-900/5 border border-transparent rounded-2xl focus:bg-white outline-none font-medium" value={newGroup} onChange={e => setNewGroup(e.target.value)} />
+                                    <button type="submit" className="btn-premium bg-emerald-600 hover:bg-emerald-700 text-white px-6 rounded-2xl font-bold">Crear</button>
+                                </form>
+                            </section>
+                        )}
                         <div className="grid gap-6">
                             {groups.map(group => (
                                 <div key={group.id} className="glass-card p-6 rounded-3xl border border-emerald-100/30">
@@ -512,9 +478,11 @@ const CoordinatorView = ({ db, appId, campaignId, seeds, groups, storage, onRese
                                             </div>
                                             <h3 className="font-bold text-lg text-emerald-950">{group.name}</h3>
                                         </div>
-                                        <button onClick={() => setEditingGroup(group)} className="text-emerald-400 hover:text-emerald-700 p-2 hover:bg-emerald-50 rounded-lg">
-                                            <Edit2 size={16} />
-                                        </button>
+                                        {!isReadOnly && (
+                                            <button onClick={() => setEditingGroup(group)} className="text-emerald-400 hover:text-emerald-700 p-2 hover:bg-emerald-50 rounded-lg">
+                                                <Edit2 size={16} />
+                                            </button>
+                                        )}
                                     </div>
 
                                     <div className="space-y-4">
@@ -544,13 +512,15 @@ const CoordinatorView = ({ db, appId, campaignId, seeds, groups, storage, onRese
                                                                     </div>
                                                                 </div>
 
-                                                                <button
-                                                                    onClick={() => removeSeedFromGroup(group.id, sid)}
-                                                                    disabled={verifyingDelete}
-                                                                    className="ml-1 w-6 h-6 flex items-center justify-center bg-white text-red-300 rounded-full hover:bg-red-500 hover:text-white transition-colors shadow-sm"
-                                                                >
-                                                                    <X size={12} />
-                                                                </button>
+                                                                {!isReadOnly && (
+                                                                    <button
+                                                                        onClick={() => removeSeedFromGroup(group.id, sid)}
+                                                                        disabled={verifyingDelete}
+                                                                        className="ml-1 w-6 h-6 flex items-center justify-center bg-white text-red-300 rounded-full hover:bg-red-500 hover:text-white transition-colors shadow-sm"
+                                                                    >
+                                                                        <X size={12} />
+                                                                    </button>
+                                                                )}
                                                             </div>
                                                         ) : null;
                                                     })
@@ -560,20 +530,22 @@ const CoordinatorView = ({ db, appId, campaignId, seeds, groups, storage, onRese
                                             </div>
                                         </div>
 
-                                        <div className="relative group">
-                                            <select
-                                                className="w-full p-3 pl-4 border border-transparent rounded-xl bg-emerald-900/5 text-sm font-bold text-emerald-900 appearance-none cursor-pointer outline-none hover:bg-emerald-900/10 transition-colors"
-                                                onChange={(e) => {
-                                                    if (e.target.value) assignSeedToGroup(group.id, e.target.value);
-                                                    e.target.value = "";
-                                                }}
-                                            >
-                                                <option value="">+ Añadir lote a la mochila</option>
-                                                {seeds.map(seed => (
-                                                    <option key={seed.id} value={seed.id}>{seed.species} ({seed.provider}) {seed.treatment ? `- ${seed.treatment}` : ''}</option>
-                                                ))}
-                                            </select>
-                                        </div>
+                                        {!isReadOnly && (
+                                            <div className="relative group">
+                                                <select
+                                                    className="w-full p-3 pl-4 border border-transparent rounded-xl bg-emerald-900/5 text-sm font-bold text-emerald-900 appearance-none cursor-pointer outline-none hover:bg-emerald-900/10 transition-colors"
+                                                    onChange={(e) => {
+                                                        if (e.target.value) assignSeedToGroup(group.id, e.target.value);
+                                                        e.target.value = "";
+                                                    }}
+                                                >
+                                                    <option value="">+ Añadir lote a la mochila</option>
+                                                    {seeds.map(seed => (
+                                                        <option key={seed.id} value={seed.id}>{seed.species} ({seed.provider}) {seed.treatment ? `- ${seed.treatment}` : ''}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             ))}
@@ -632,7 +604,7 @@ const CoordinatorView = ({ db, appId, campaignId, seeds, groups, storage, onRese
                                                 <th className="p-3 cursor-pointer hover:text-emerald-700" onClick={() => handleSort('holeCount')}>
                                                     <div className="flex items-center gap-1">Golpes <ArrowUpDown size={10} /></div>
                                                 </th>
-                                                <th className="p-3">Acciones</th>
+                                                {!isReadOnly && <th className="p-3">Acciones</th>}
                                             </tr>
                                         </thead>
                                         <tbody className="text-sm text-emerald-900">
@@ -648,14 +620,16 @@ const CoordinatorView = ({ db, appId, campaignId, seeds, groups, storage, onRese
                                                         <td className="p-3">{log.groupName}</td>
                                                         <td className="p-3">{log.seedName}</td>
                                                         <td className="p-3 font-bold">{log.holeCount || 1}</td>
-                                                        <td className="p-3 flex gap-2" onClick={e => e.stopPropagation()}>
-                                                            <button onClick={() => setEditingLog(log)} className="p-1 hover:bg-emerald-100 rounded text-emerald-600"><Edit2 size={14} /></button>
-                                                            <button onClick={() => handleDeleteLog(log.id)} className="p-1 hover:bg-red-100 rounded text-red-500"><Trash2 size={14} /></button>
-                                                        </td>
+                                                        {!isReadOnly && (
+                                                            <td className="p-3 flex gap-2" onClick={e => e.stopPropagation()}>
+                                                                <button onClick={() => setEditingLog(log)} className="p-1 hover:bg-emerald-100 rounded text-emerald-600"><Edit2 size={14} /></button>
+                                                                <button onClick={() => handleDeleteLog(log.id)} className="p-1 hover:bg-red-100 rounded text-red-500"><Trash2 size={14} /></button>
+                                                            </td>
+                                                        )}
                                                     </tr>
                                                     {expandedLogId === log.id && (
                                                         <tr className="bg-emerald-50/30 animate-fadeIn">
-                                                            <td colSpan="5" className="p-4">
+                                                            <td colSpan={isReadOnly ? 4 : 5} className="p-4">
                                                                 <div className="flex flex-col md:flex-row gap-6">
                                                                     {/* Foto */}
                                                                     <div className="shrink-0">
@@ -816,94 +790,7 @@ const CoordinatorView = ({ db, appId, campaignId, seeds, groups, storage, onRese
                 }
             </div >
 
-            {activeTab === 'campaigns' && (
-                <div className="p-4 max-w-4xl mx-auto space-y-6 animate-slideUp">
-                    {/* Create New */}
-                    {!isCreatingCampaign ? (
-                        <button
-                            onClick={() => setIsCreatingCampaign(true)}
-                            className="w-full py-4 rounded-3xl border-2 border-dashed border-emerald-300 text-emerald-600 font-bold hover:bg-emerald-50 transition-all flex items-center justify-center gap-2 group"
-                        >
-                            <PlusCircle className="group-hover:scale-110 transition-transform" />
-                            Nueva Jornada
-                        </button>
-                    ) : (
-                        <section className="glass-card p-6 rounded-3xl shadow-sm border border-emerald-100/50">
-                            <h3 className="font-bold text-lg text-emerald-950 mb-4">Crear Nueva Jornada</h3>
-                            <form onSubmit={handleCreateCampaign} className="flex gap-3">
-                                <input
-                                    autoFocus
-                                    placeholder="Nombre de la jornada..."
-                                    className="flex-1 p-3 bg-emerald-900/5 border border-transparent rounded-xl focus:bg-white outline-none font-medium"
-                                    value={newCampaignName}
-                                    onChange={e => setNewCampaignName(e.target.value)}
-                                />
-                                <button type="button" onClick={() => setIsCreatingCampaign(false)} className="px-4 py-2 font-bold text-emerald-600 hover:bg-emerald-50 rounded-xl">Cancelar</button>
-                                <button type="submit" className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold">Crear</button>
-                            </form>
-                        </section>
-                    )}
 
-                    {/* List */}
-                    <div className="grid gap-4">
-                        {allCampaigns.map(camp => (
-                            <div key={camp.id} className={`glass-card p-6 rounded-3xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${camp.status === 'active' ? 'border-emerald-500 shadow-md ring-1 ring-emerald-500/20' : 'border-emerald-100/50 opacity-80'}`}>
-
-                                <div className="flex-1">
-                                    {editingCampaign?.id === camp.id ? (
-                                        <form
-                                            onSubmit={(e) => {
-                                                e.preventDefault();
-                                                handleUpdateCampaign(camp.id, { name: editingCampaign.name });
-                                            }}
-                                            className="flex gap-2"
-                                        >
-                                            <input
-                                                className="flex-1 p-2 bg-white border border-emerald-200 rounded-lg font-bold text-lg text-emerald-900"
-                                                value={editingCampaign.name}
-                                                onChange={e => setEditingCampaign({ ...editingCampaign, name: e.target.value })}
-                                            />
-                                            <button type="submit" className="p-2 bg-emerald-100 text-emerald-700 rounded-lg"><Check size={18} /></button>
-                                            <button type="button" onClick={() => setEditingCampaign(null)} className="p-2 text-red-400 hover:bg-red-50 rounded-lg"><X size={18} /></button>
-                                        </form>
-                                    ) : (
-                                        <>
-                                            <div className="flex items-center gap-3 mb-1">
-                                                <h3 className="font-bold text-lg text-emerald-950">{camp.name}</h3>
-                                                {camp.status === 'active' && <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full uppercase font-bold tracking-wider">Activa</span>}
-                                                {campaignId === camp.id && <span className="bg-blue-100 text-blue-800 text-[10px] px-2 py-0.5 rounded-full uppercase font-bold tracking-wider">Actual</span>}
-                                            </div>
-                                            <div className="text-xs font-semibold text-emerald-800/40 uppercase tracking-widest">
-                                                Creada: {camp.createdAt?.seconds ? new Date(camp.createdAt.seconds * 1000).toLocaleDateString() : '—'}
-                                            </div>
-                                        </>
-                                    )}
-                                </div>
-
-                                <div className="flex items-center gap-2">
-                                    {/* Toggle Status */}
-                                    <button
-                                        onClick={() => handleUpdateCampaign(camp.id, { status: camp.status === 'active' ? 'inactive' : 'active' })}
-                                        className={`p-3 rounded-xl font-bold text-xs flex items-center gap-2 transition-colors ${camp.status === 'active' ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
-                                        title={camp.status === 'active' ? 'Desactivar' : 'Activar'}
-                                    >
-                                        <Power size={18} />
-                                        {camp.status === 'active' ? 'Desactivar' : 'Activar'}
-                                    </button>
-
-                                    {/* Edit Name */}
-                                    <button
-                                        onClick={() => setEditingCampaign(camp)}
-                                        className="p-3 bg-white border border-emerald-100 text-emerald-600 rounded-xl hover:bg-emerald-50 transition-colors"
-                                    >
-                                        <Edit2 size={18} />
-                                    </button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
 
             {/* Editing Modal */}
             {
@@ -917,9 +804,13 @@ const CoordinatorView = ({ db, appId, campaignId, seeds, groups, storage, onRese
                             <SowingForm
                                 initialData={editingLog}
                                 seeds={seeds}
-                                onSave={handleUpdateLog}
+                                onSave={(data) => {
+                                    if (isReadOnly) return;
+                                    handleUpdateLog(data);
+                                }}
                                 onCancel={() => setEditingLog(null)}
-                                onDelete={() => handleDeleteLog(editingLog.id)}
+                                // Hide delete button in modal if isReadOnly
+                                onDelete={isReadOnly ? undefined : () => handleDeleteLog(editingLog.id)}
                                 isSaving={isSubmitting}
                             />
                         </div>

@@ -8,15 +8,32 @@ Given('que estoy en la página principal de la aplicación', async ({ page }) =>
 });
 
 Given('selecciono la primera campaña disponible', async ({ page }) => {
-    // Busca cualquier botón en la home, asumiendo que son campañas
-    // Esperamos que carguen
-    await expect(page.locator('body')).not.toBeEmpty();
-    const campaignButton = page.locator('button').first();
+    // Buscamos botones de campaña (tienen el icono de calendario)
+    const campaignButtons = page.locator('button').filter({ has: page.locator('svg.lucide-calendar') });
+
+    // Esperamos un momento a que carguen
     try {
-        await campaignButton.waitFor({ state: 'visible', timeout: 8000 });
-        await campaignButton.click();
+        await campaignButtons.first().waitFor({ state: 'visible', timeout: 3000 });
     } catch (e) {
-        console.log('⚠️ No se encontraron campañas. El test podría fallar.');
+        console.log("No campaigns found, checking create options...");
+    }
+
+    const count = await campaignButtons.count();
+
+    if (count > 0) {
+        await campaignButtons.first().click();
+    } else {
+        // Si no hay campañas, creamos una
+        console.log("Creando campaña de prueba en BDD...");
+        const createBtn = page.getByText('Nueva Jornada').last();
+        if (await createBtn.isVisible()) {
+            await createBtn.click();
+        } else {
+            await page.getByText('Crear la primera jornada').click();
+        }
+
+        await page.fill('input[placeholder*="Ej: Reforestación"]', 'Campaña BDD');
+        await page.getByText('Crear', { exact: true }).click();
     }
 });
 

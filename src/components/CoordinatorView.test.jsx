@@ -11,7 +11,11 @@ vi.mock('firebase/firestore', async () => {
         getDocs: vi.fn(),
         collection: vi.fn(),
         query: vi.fn(),
-        onSnapshot: vi.fn(), // If used
+        onSnapshot: vi.fn((q, cb) => {
+            // Simular respuesta vacía inmediata para evitar bloqueo
+            if (cb) cb({ docs: [] });
+            return vi.fn();
+        }),
         where: vi.fn(),
         orderBy: vi.fn(),
         limit: vi.fn(),

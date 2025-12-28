@@ -10,7 +10,7 @@ import ManualView from './ManualView';
 import SowingForm from './SowingForm';
 import { filterAndSortLogs } from '../utils/logUtils';
 
-const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onResetRole }) => {
+const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onResetRole, isReadOnly }) => {
     const [selectedGroupId, setSelectedGroupId] = useState(null);
     const [groupStats, setGroupStats] = useState({});
     const [showManual, setShowManual] = useState(false);
@@ -22,6 +22,13 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
     const [loadingLogs, setLoadingLogs] = useState(false);
     const [viewImage, setViewImage] = useState(null);
     const [expandedLogId, setExpandedLogId] = useState(null);
+
+    // Si la campaña es de solo lectura, forzamos la vista de historial al montar o cambiar el estado
+    useEffect(() => {
+        if (isReadOnly) {
+            setView('history');
+        }
+    }, [isReadOnly]);
 
     // Estados para el cuaderno de campo con paginación
     const [searchTerm, setSearchTerm] = useState('');
@@ -130,6 +137,7 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
     };
 
     const startEditing = (log) => {
+        if (isReadOnly) return;
         setEditingLog(log);
         setView('form');
     };
@@ -141,6 +149,7 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
 
 
     const handleSow = async (data) => {
+        if (isReadOnly) return;
         setIsSubmitting(true);
         try {
             const selectedGroup = groups.find(g => g.id === selectedGroupId);
@@ -284,6 +293,7 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
     };
 
     const confirmAndDelete = async (logId) => {
+        if (isReadOnly) return;
         if (window.confirm("¿Estás seguro de que quieres eliminar este registro? Esta acción no se puede deshacer.")) {
             setIsSubmitting(true); // Reuse submitting state for loading indication
             try {
@@ -313,8 +323,10 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
                     </button>
                     <div>
                         <div className="flex items-center gap-1.5 mb-0.5">
-                            <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
-                            <span className="text-[10px] font-bold text-amber-900/40 uppercase tracking-widest">Misión en curso</span>
+                            <span className={`w-2 h-2 rounded-full animate-pulse ${isReadOnly ? 'bg-red-500' : 'bg-amber-500'}`}></span>
+                            <span className={`text-[10px] font-bold uppercase tracking-widest ${isReadOnly ? 'text-red-900/40' : 'text-amber-900/40'}`}>
+                                {isReadOnly ? 'Sólo lectura' : 'Misión en curso'}
+                            </span>
                         </div>
                         <h2 className="text-xl font-extrabold text-emerald-950 leading-none">{selectedGroup.name}</h2>
                     </div>
@@ -327,16 +339,18 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
 
             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 w-[90%] max-w-sm">
                 <div className="glass-card p-1.5 rounded-[2.5rem] flex items-center shadow-2xl border border-emerald-100/30">
-                    <button onClick={() => setView('form')} className={`flex-1 flex flex-col items-center gap-1 py-3 rounded-[2rem] transition-all duration-300 ${view === 'form' ? 'bg-emerald-600 text-white shadow-lg' : 'text-emerald-900/40'}`}>
-                        <PlusCircle size={20} /><span className="text-[10px] font-bold uppercase">Siembra</span>
-                    </button>
+                    {!isReadOnly && (
+                        <button onClick={() => setView('form')} className={`flex-1 flex flex-col items-center gap-1 py-3 rounded-[2rem] transition-all duration-300 ${view === 'form' ? 'bg-emerald-600 text-white shadow-lg' : 'text-emerald-900/40'}`}>
+                            <PlusCircle size={20} /><span className="text-[10px] font-bold uppercase">Siembra</span>
+                        </button>
+                    )}
                     <button onClick={() => setView('history')} className={`flex-1 flex flex-col items-center gap-1 py-3 rounded-[2rem] transition-all duration-300 ${view === 'history' ? 'bg-emerald-600 text-white shadow-lg' : 'text-emerald-900/40'}`}>
                         <History size={20} /><span className="text-[10px] font-bold uppercase">Cuaderno</span>
                     </button>
                 </div>
             </div>
 
-            {view === 'form' && (
+            {view === 'form' && !isReadOnly && (
                 <div className="px-3 md:px-5 pb-12 animate-slideUp">
                     {editingLog && (
                         <div className="bg-amber-100 p-4 rounded-2xl flex items-center justify-between border border-amber-200 mb-6 animate-pulse">
@@ -359,6 +373,7 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
                     />
                 </div>
             )}
+
 
             {view === 'history' && (
                 <div className="px-5 space-y-4 animate-slideUp pb-12 pt-4">
@@ -477,27 +492,31 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
                                                     <div className="text-[9px] font-bold text-emerald-800/30 uppercase">Golpes</div>
                                                 </div>
 
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.preventDefault();
-                                                        e.stopPropagation();
-                                                        startEditing(log);
-                                                    }}
-                                                    className="w-9 h-9 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600 hover:bg-emerald-100 active:scale-95 transition-all border border-emerald-100"
-                                                >
-                                                    <Pencil size={16} />
-                                                </button>
+                                                {!isReadOnly && (
+                                                    <>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.preventDefault();
+                                                                e.stopPropagation();
+                                                                startEditing(log);
+                                                            }}
+                                                            className="w-9 h-9 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600 hover:bg-emerald-100 active:scale-95 transition-all border border-emerald-100"
+                                                        >
+                                                            <Pencil size={16} />
+                                                        </button>
 
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.preventDefault();
-                                                        e.stopPropagation();
-                                                        confirmAndDelete(log.id);
-                                                    }}
-                                                    className="w-9 h-9 bg-red-50 rounded-xl flex items-center justify-center text-red-500 hover:bg-red-100 active:scale-95 transition-all border border-red-100"
-                                                >
-                                                    <Trash2 size={16} />
-                                                </button>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.preventDefault();
+                                                                e.stopPropagation();
+                                                                confirmAndDelete(log.id);
+                                                            }}
+                                                            className="w-9 h-9 bg-red-50 rounded-xl flex items-center justify-center text-red-500 hover:bg-red-100 active:scale-95 transition-all border border-red-100"
+                                                        >
+                                                            <Trash2 size={16} />
+                                                        </button>
+                                                    </>
+                                                )}
 
                                                 <div className="text-emerald-300 ml-1">
                                                     {expandedLogId === log.id ? <ChevronUp size={20} /> : <ChevronDown size={20} />}

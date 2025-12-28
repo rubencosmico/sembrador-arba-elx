@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
 import { Calendar, PlusCircle, ArrowRight, Map } from 'lucide-react';
 
-const CampaignSelector = ({ db, appId, onSelectCampaign }) => {
+const CampaignSelector = ({ db, appId, onSelectCampaign, onManage }) => {
     const [campaigns, setCampaigns] = useState([]);
     const [newCampaignName, setNewCampaignName] = useState('');
     const [showCreate, setShowCreate] = useState(false);
@@ -28,7 +28,7 @@ const CampaignSelector = ({ db, appId, onSelectCampaign }) => {
                 createdAt: serverTimestamp(),
                 status: 'active'
             });
-            onSelectCampaign({ id: docRef.id, name: newCampaignName });
+            onSelectCampaign({ id: docRef.id, name: newCampaignName, status: 'active' });
         } catch (error) {
             console.error("Error creating campaign", error);
             alert("Error al crear jornada");
@@ -38,6 +38,15 @@ const CampaignSelector = ({ db, appId, onSelectCampaign }) => {
     return (
         <div className="min-h-screen bg-[#f1f5f0] p-6 flex flex-col justify-center items-center relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-emerald-600 to-emerald-400"></div>
+
+            {onManage && (
+                <button
+                    onClick={onManage}
+                    className="absolute top-4 right-4 z-20 text-emerald-800 text-sm font-bold bg-white/50 p-2 rounded-lg hover:bg-white transition-all border border-emerald-100"
+                >
+                    Gestionar Jornadas
+                </button>
+            )}
 
             <div className="w-full max-w-md space-y-8 relative z-10 animate-slideUp">
                 <div className="text-center space-y-2">
