@@ -8,9 +8,21 @@ const ClaimRecordsView = ({ db, appId, user, onBack }) => {
     const [submitting, setSubmitting] = useState(false);
     const [success, setSuccess] = useState(false);
 
+    const [campaignNames, setCampaignNames] = useState({});
+
     useEffect(() => {
-        const fetchOrphans = async () => {
+        const fetchData = async () => {
             try {
+                // 1. Cargar Campañas para tener los nombres
+                const campPath = ['artifacts', appId, 'public', 'data', 'campaigns'];
+                const campSnap = await getDocs(collection(db, ...campPath));
+                const namesMap = {};
+                campSnap.forEach(d => {
+                    namesMap[d.id] = d.data().name;
+                });
+                setCampaignNames(namesMap);
+
+                // 2. Cargar Logs huérfanos
                 const dataPath = ['artifacts', appId, 'public', 'data', 'logs'];
                 const q = query(collection(db, ...dataPath), where('ownerId', '==', null));
                 const snap = await getDocs(q);
@@ -18,11 +30,11 @@ const ClaimRecordsView = ({ db, appId, user, onBack }) => {
                 const orphans = snap.docs.map(d => ({ id: d.id, ...d.data() }));
                 setOrphanLogs(orphans);
             } catch (err) {
-                console.error("[CLAIM] Error al obtener registros:", err);
+                console.error("[CLAIM] Error al obtener datos:", err);
             }
             setLoading(false);
         };
-        fetchOrphans();
+        fetchData();
     }, [db, appId]);
 
     const toggleSelect = (id) => {
@@ -106,10 +118,22 @@ const ClaimRecordsView = ({ db, appId, user, onBack }) => {
                                     }`}
                             >
                                 <div className="flex justify-between items-center">
-                                    <div>
-                                        <div className="font-bold text-emerald-400 truncate max-w-[200px]">{log.species || 'Especie desconocida'}</div>
-                                        <div className="text-xs text-slate-500">
-                                            {log.timestamp?.toDate ? log.timestamp.toDate().toLocaleDateString() : 'Fecha desconocida'}
+                                    <div className="flex-1 min-w-0 pr-4">
+                                        <div className="flex items-center space-x-2 mb-1">
+                                            <span className="font-bold text-emerald-400 truncate">
+                                                {log.seedName || 'Especie desconocida'}
+                                            </span>
+                                            <span className="text-[10px] bg-slate-700 text-slate-300 px-2 py-0.5 rounded-full">
+                                                {log.quantity || 1} uds
+                                            </span>
+                                        </div>
+                                        <div className="text-xs text-slate-300 font-medium mb-1">
+                                            👥 {log.groupName || 'Sin grupo'}
+                                        </div>
+                                        <div className="text-[10px] text-slate-500 flex items-center space-x-2">
+                                            <span>📅 {log.timestamp?.toDate ? log.timestamp.toDate().toLocaleDateString() : 'Fecha desconocida'}</span>
+                                            <span>•</span>
+                                            <span className="truncate italic">📍 {campaignNames[log.campaignId] || 'Jornada desconocida'}</span>
                                         </div>
                                     </div>
                                     <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${selectedIds.has(log.id) ? 'bg-emerald-500 border-emerald-500' : 'border-slate-600'
