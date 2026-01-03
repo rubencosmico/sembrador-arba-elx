@@ -6,7 +6,7 @@ import {
     messaging
 } from './firebase';
 import { getToken, onMessage } from 'firebase/messaging';
-import { doc, getDoc, setDoc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, arrayUnion, collection, query, where, onSnapshot } from 'firebase/firestore';
 
 // Components
 import LoadingScreen from './components/LoadingScreen';
