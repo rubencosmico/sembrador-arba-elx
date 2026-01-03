@@ -18,7 +18,9 @@ const ClaimRecordsView = ({ db, appId, user, onBack }) => {
             const snap = await getDocs(q);
             const orphans = snap.docs
                 .map(d => ({ id: d.id, ...d.data() }))
-                .filter(l => !l.ownerId); // Simple client-side filter for demo/small data
+                .filter(l => !l.ownerId || l.ownerId === null);
+
+            console.log(`[CLAIM] Encontrados ${orphans.length} registros sin dueño.`);
 
             setOrphanLogs(orphans);
             setLoading(false);
@@ -102,8 +104,8 @@ const ClaimRecordsView = ({ db, appId, user, onBack }) => {
                                 key={log.id}
                                 onClick={() => toggleSelect(log.id)}
                                 className={`p-4 rounded-2xl border transition-all cursor-pointer ${selectedIds.has(log.id)
-                                        ? 'bg-emerald-500/10 border-emerald-500 ring-1 ring-emerald-500'
-                                        : 'bg-slate-800/50 border-slate-700/50 hover:border-slate-600'
+                                    ? 'bg-emerald-500/10 border-emerald-500 ring-1 ring-emerald-500'
+                                    : 'bg-slate-800/50 border-slate-700/50 hover:border-slate-600'
                                     }`}
                             >
                                 <div className="flex justify-between items-center">

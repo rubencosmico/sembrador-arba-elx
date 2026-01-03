@@ -36,7 +36,8 @@ const LandingPage = ({
             // 1. If public -> show.
             // 2. If private -> only show if user is owner or participant.
             const visibleCampaigns = allCampaigns.filter(c => {
-                if (c.visibility === 'public') return true;
+                const isPublic = !c.visibility || c.visibility === 'public';
+                if (isPublic) return true;
                 if (user && (c.ownerId === user.uid || (c.participants && c.participants.includes(user.uid)))) return true;
                 return false;
             });

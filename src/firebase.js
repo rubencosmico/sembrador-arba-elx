@@ -19,14 +19,14 @@ const getAppId = () => {
 };
 
 const firebaseConfig = getFirebaseConfig();
-export const appId = getAppId();
+const appId = getAppId();
 
 const app = initializeApp(firebaseConfig);
-export const db = initializeFirestore(app, {
+const db = initializeFirestore(app, {
     localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
 });
-export const auth = getAuth(app);
-export const storage = getStorage(app);
+const auth = getAuth(app);
+const storage = getStorage(app);
 const messaging = typeof window !== 'undefined' ? getMessaging(app) : null;
 
 export { db, auth, storage, messaging, appId, GoogleAuthProvider, EmailAuthProvider, onAuthStateChanged, signOut, signInWithPopup };
