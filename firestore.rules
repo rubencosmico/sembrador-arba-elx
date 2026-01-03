@@ -1,0 +1,61 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Funciones de utilidad
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // Seguridad de Admins: Nadie puede escribir aquí desde el cliente
+    match /admins/{userId} {
+      allow read: if isSignedIn();
+      allow write: if false; 
+    }
+
+    // Perfiles de usuario: Solo el dueño puede editar su perfil
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Mensajes: Solo participantes pueden leer/escribir
+    match /messages/{messageId} {
+      allow read: if isSignedIn() && (request.auth.uid == resource.data.senderId || request.auth.uid == resource.data.receiverId);
+      allow create: if isSignedIn() && request.auth.uid == request.resource.data.senderId;
+      allow update, delete: if false; 
+    }
+
+    // Seguidores
+    match /follows/{followId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && (request.auth.uid == request.resource.data.followerId || request.auth.uid == resource.data.followerId);
+    }
+
+    // Reclamaciones
+    match /claimRequests/{requestId} {
+      allow read: if isSignedIn() && (request.auth.uid == resource.data.userId || isAdmin());
+      allow create: if isSignedIn() && request.auth.uid == request.resource.data.userId;
+      allow update: if isAdmin();
+    }
+
+    // Jornadas (artifacts): Reglas según visibilidad
+    match /artifacts/{appId}/public/data/campaigns/{campaignId} {
+      allow read: if resource.data.visibility == 'public' || (isSignedIn() && (request.auth.uid == resource.data.ownerId || (resource.data.participants != null && request.auth.uid in resource.data.participants)));
+      allow write: if isSignedIn() && (request.auth.uid == resource.data.ownerId || isAdmin());
+
+      // Reglas para subcolecciones (seeds, groups, logs) heredadas de la jornada
+      match /{allSubcollections=**} {
+        allow read: if get(/databases/$(database)/documents/artifacts/$(appId)/public/data/campaigns/$(campaignId)).data.visibility == 'public' || 
+                    (isSignedIn() && (get(/databases/$(database)/documents/artifacts/$(appId)/public/data/campaigns/$(campaignId)).data.ownerId == request.auth.uid || 
+                    (get(/databases/$(database)/documents/artifacts/$(appId)/public/data/campaigns/$(campaignId)).data.participants != null && request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/public/data/campaigns/$(campaignId)).data.participants)));
+        
+        allow write: if isSignedIn() && (get(/databases/$(database)/documents/artifacts/$(appId)/public/data/campaigns/$(campaignId)).data.ownerId == request.auth.uid || isAdmin());
+      }
+    }
+  }
+}
