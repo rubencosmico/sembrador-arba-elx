@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, getDocs, limit, or } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, getDocs, limit, or, orderBy } from 'firebase/firestore';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -28,57 +28,49 @@ const LandingPage = ({
     const [approxCoords, setApproxCoords] = useState({}); // { campaignId: {lat, lng} }
 
     useEffect(() => {
-        // Fetch approximate coordinates for campaigns missing them
-        const missing = campaigns.filter(c => !c.coordinates);
+        const missing = campaigns.filter(c => !c.coordinates && !approxCoords[c.id]);
         if (missing.length === 0) return;
 
         const fetchApprox = async () => {
-            const newCoords = { ...approxCoords };
+            const updates = {};
             for (const c of missing) {
-                if (newCoords[c.id]) continue;
                 try {
                     const logsPath = ['artifacts', appId, 'public', 'data', 'logs'];
-                    const q = query(collection(db, ...logsPath), where('campaignId', '==', c.id), limit(1));
+                    const q = query(collection(db, ...logsPath), where('campaignId', '==', c.id), limit(5));
                     const snap = await getDocs(q);
-                    if (!snap.empty) {
-                        const logData = snap.docs[0].data();
+                    for (const d of snap.docs) {
+                        const logData = d.data();
                         if (logData.location) {
-                            newCoords[c.id] = { lat: logData.location.latitude, lng: logData.location.longitude };
+                            const raw = logData.location;
+                            const lat = typeof raw.latitude === 'number' ? raw.latitude : raw.lat;
+                            const lng = typeof raw.longitude === 'number' ? raw.longitude : raw.lng;
+                            if (typeof lat === 'number' && typeof lng === 'number') {
+                                updates[c.id] = { lat, lng };
+                                break;
+                            }
                         }
                     }
                 } catch (err) {
                     console.error("Error fetching approx coords for", c.id, err);
                 }
             }
-            setApproxCoords(newCoords);
+            if (Object.keys(updates).length > 0) {
+                setApproxCoords(prev => ({ ...prev, ...updates }));
+            }
         };
         fetchApprox();
-    }, [campaigns, db, appId]);
+    }, [campaigns, db, appId]); // No incluir approxCoords aquí para evitar bucles
 
     useEffect(() => {
         const dataPath = ['artifacts', appId, 'public', 'data', 'campaigns'];
 
-        let q;
-        if (user) {
-            q = query(
-                collection(db, ...dataPath),
-                or(
-                    where('visibility', '==', 'public'),
-                    where('ownerId', '==', user.uid),
-                    where('participants', 'array-contains', user.uid)
-                )
-            );
-        } else {
-            q = query(
-                collection(db, ...dataPath),
-                where('visibility', '==', 'public')
-            );
-        }
+        const q = query(collection(db, ...dataPath));
 
         const unsubscribe = onSnapshot(q, (snap) => {
             const allCampaigns = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
             const visibleCampaigns = allCampaigns.filter(c => {
+                if (isSuperAdmin) return true;
                 const isPublic = !c.visibility || c.visibility === 'public';
                 if (isPublic) return true;
                 if (user && (c.ownerId === user.uid || (c.participants && c.participants.includes(user.uid)))) return true;
@@ -253,11 +245,11 @@ const LandingPage = ({
                                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                             />
                             {campaigns.map(c => {
-                                const pos = c.coordinates || approxCoords[c.id];
-                                if (!pos) return null;
+                                let pos = c.coordinates || approxCoords[c.id];
+                                if (!pos || (typeof pos === 'object' && Object.keys(pos).length === 0)) return null;
 
-                                const lat = pos.lat || pos.latitude;
-                                const lng = pos.lng || pos.longitude;
+                                const lat = typeof pos.latitude === 'number' ? pos.latitude : pos.lat;
+                                const lng = typeof pos.longitude === 'number' ? pos.longitude : pos.lng;
 
                                 if (typeof lat !== 'number' || typeof lng !== 'number') return null;
 
