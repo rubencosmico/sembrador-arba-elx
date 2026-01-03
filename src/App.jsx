@@ -91,7 +91,7 @@ function App() {
             const permission = await Notification.requestPermission();
             if (permission === 'granted') {
                 const token = await getToken(messaging, {
-                    vapidKey: 'BIl_placeholder_clave_vapid_de_la_consola_firebase'
+                    vapidKey: import.meta.env.VITE_VAPID_KEY || 'BKs6Be4TOZmZyvlXZmr7gan-ALdpDyaJmVDhbk7sPaV4sVVE7F6fIRrP9lFaDHQLdEZI6NrzV3DzjDphhGcub1E'
                 });
                 if (token) {
                     await updateDoc(doc(db, 'users', userId), { fcmToken: token });
