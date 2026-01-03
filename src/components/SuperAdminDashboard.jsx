@@ -1,10 +1,9 @@
-```javascript
 import React, { useState, useEffect } from 'react';
-import { collection, query, onSnapshot, doc, getDoc, updateDoc, writeBatch } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, getDoc, updateDoc, writeBatch } from 'firebase/firestore';
 
 const sendPushNotification = async (toToken, title, body) => {
     if (!toToken) return;
-    console.log(`[PUSH] A: ${ toToken } | ${ title }: ${ body } `);
+    console.log(`[PUSH] A: ${toToken} | ${title}: ${body}`);
 };
 
 const SuperAdminDashboard = ({ db, appId, onBack }) => {
