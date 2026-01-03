@@ -12,18 +12,10 @@ const ClaimRecordsView = ({ db, appId, user, onBack }) => {
         const fetchOrphans = async () => {
             try {
                 const dataPath = ['artifacts', appId, 'public', 'data', 'logs'];
-                console.log("[CLAIM] Buscando logs en:", dataPath.join('/'));
-
-                const q = query(collection(db, ...dataPath)); // Traer todo y filtrar en cliente para debug
+                const q = query(collection(db, ...dataPath), where('ownerId', '==', null));
                 const snap = await getDocs(q);
 
-                console.log(`[CLAIM] Respuesta de Firestore: ${snap.docs.length} documentos.`);
-
-                const orphans = snap.docs
-                    .map(d => ({ id: d.id, ...d.data() }))
-                    .filter(l => !l.ownerId || l.ownerId === null);
-
-                console.log(`[CLAIM] Registros huérfanos filtrados: ${orphans.length}`);
+                const orphans = snap.docs.map(d => ({ id: d.id, ...d.data() }));
                 setOrphanLogs(orphans);
             } catch (err) {
                 console.error("[CLAIM] Error al obtener registros:", err);
