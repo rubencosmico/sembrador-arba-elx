@@ -1,29 +1,26 @@
 // Import and configure the Firebase SDK
-import { initializeApp } from "firebase/app";
-import { getMessaging, onBackgroundMessage } from "firebase/messaging/sw";
-
-// The config will be injected during build or read from env if possible.
-// Alternatively, FCM works if the project ID is available here.
-// For static public folder, we might need a script to inject this or use a global.
+// Using importScripts for static service worker compatibility
+importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js');
 
 const firebaseConfig = {
-    apiKey: "TODO_INJECT_VIA_ENV",
-    authDomain: "TODO",
-    projectId: "TODO",
-    storageBucket: "TODO",
-    messagingSenderId: "TODO",
-    appId: "TODO"
+    apiKey: "AIzaSyCwQlpVTERw_zA_ZWmHCrOlQZf9ikf3ksc",
+    authDomain: "arba-elx-siembra.firebaseapp.com",
+    projectId: "arba-elx-siembra",
+    storageBucket: "arba-elx-siembra.firebasestorage.app",
+    messagingSenderId: "655439706240",
+    appId: "1:655439706240:web:e5918953ae64263e44ce65"
 };
 
-const app = initializeApp(firebaseConfig);
-const messaging = getMessaging(app);
+firebase.initializeApp(firebaseConfig);
+const messaging = firebase.messaging();
 
-onBackgroundMessage(messaging, (payload) => {
+messaging.onBackgroundMessage((payload) => {
     console.log('[firebase-messaging-sw.js] Received background message ', payload);
     const notificationTitle = payload.notification.title;
     const notificationOptions = {
         body: payload.notification.body,
-        icon: '/logo192.png' // Or equivalent
+        icon: '/logo192.png'
     };
 
     self.registration.showNotification(notificationTitle, notificationOptions);
