@@ -15,7 +15,7 @@ const getFirebaseConfig = () => {
 const getAppId = () => {
     if (typeof __app_id !== 'undefined') return __app_id;
     if (import.meta.env && import.meta.env.VITE_APP_ID) return import.meta.env.VITE_APP_ID;
-    return 'arba-elx-default';
+    return 'arba-elx';
 };
 
 const firebaseConfig = getFirebaseConfig();

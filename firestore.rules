@@ -43,33 +43,10 @@ service cloud.firestore {
       allow update: if isAdmin();
     }
 
-    // Reglas para colecciones bajo public/data (campaigns, seeds, groups, logs)
-    match /artifacts/{appId}/public/data/{collectionName}/{docId} {
-      
-      // Caso 1: Campañas
-      allow read: if collectionName == 'campaigns' && (
-        !('visibility' in resource.data) || 
-        resource.data.visibility == 'public' || 
-        (isSignedIn() && (request.auth.uid == resource.data.ownerId || (resource.data.participants != null && request.auth.uid in resource.data.participants)))
-      );
-
-      // Caso 2: Resto de colecciones (seeds, groups, logs) -> Dependen de su campaña
-      allow read: if collectionName != 'campaigns' && (
-        !('campaignId' in resource.data) || 
-        get(/databases/$(database)/documents/artifacts/$(appId)/public/data/campaigns/$(resource.data.campaignId)).data.visibility == 'public' ||
-        (isSignedIn() && (
-          get(/databases/$(database)/documents/artifacts/$(appId)/public/data/campaigns/$(resource.data.campaignId)).data.ownerId == request.auth.uid || 
-          (get(/databases/$(database)/documents/artifacts/$(appId)/public/data/campaigns/$(resource.data.campaignId)).data.participants != null &&
-           request.auth.uid in get(/databases/$(database)/documents/artifacts/$(appId)/public/data/campaigns/$(resource.data.campaignId)).data.participants)
-        ))
-      );
-
-      // Escritura: Dueño de la campaña o Admin
-      allow write: if isSignedIn() && (
-        (collectionName == 'campaigns' && (request.auth.uid == resource.data.ownerId || isAdmin())) ||
-        (collectionName != 'campaigns' && (get(/databases/$(database)/documents/artifacts/$(appId)/public/data/campaigns/$(resource.data.campaignId)).data.ownerId == request.auth.uid || isAdmin())) ||
-        (collectionName == 'logs' && request.auth.uid == request.resource.data.userId) // Permitir sembrar
-      );
+    // REGLA TEMPORAL DE DIAGNÓSTICO: Permitir leer todo en artifacts
+    match /artifacts/{appId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn();
     }
   }
 }
