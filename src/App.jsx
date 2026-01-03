@@ -1,3 +1,4 @@
+import React, { useState, useEffect } from 'react';
 import {
     db, auth, storage, appId,
     onAuthStateChanged,
@@ -73,7 +74,7 @@ function App() {
                 // Check SuperAdmin (Secure Collection)
                 const adminDoc = await getDoc(doc(db, 'admins', u.uid));
                 setIsSuperAdmin(adminDoc.exists());
-                handleNotifications(authUser.uid);
+                handleNotifications(u.uid);
             } else {
                 setUser(null);
                 setUserProfile(null);
