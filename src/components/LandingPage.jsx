@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, getDocs, query, where, onSnapshot, or } from 'firebase/firestore';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -27,14 +27,27 @@ const LandingPage = ({
 
     useEffect(() => {
         const dataPath = ['artifacts', appId, 'public', 'data', 'campaigns'];
-        const q = query(collection(db, ...dataPath));
+
+        let q;
+        if (user) {
+            q = query(
+                collection(db, ...dataPath),
+                or(
+                    where('visibility', '==', 'public'),
+                    where('ownerId', '==', user.uid),
+                    where('participants', 'array-contains', user.uid)
+                )
+            );
+        } else {
+            q = query(
+                collection(db, ...dataPath),
+                where('visibility', '==', 'public')
+            );
+        }
 
         const unsubscribe = onSnapshot(q, (snap) => {
             const allCampaigns = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-            // Filter logic:
-            // 1. If public -> show.
-            // 2. If private -> only show if user is owner or participant.
             const visibleCampaigns = allCampaigns.filter(c => {
                 const isPublic = !c.visibility || c.visibility === 'public';
                 if (isPublic) return true;
@@ -43,6 +56,9 @@ const LandingPage = ({
             });
 
             setCampaigns(visibleCampaigns);
+            setLoading(false);
+        }, (err) => {
+            console.error("[LANDING] Error en snapshot:", err);
             setLoading(false);
         });
 
