@@ -10,19 +10,20 @@ const ClaimRecordsView = ({ db, appId, user, onBack }) => {
 
     useEffect(() => {
         const fetchOrphans = async () => {
-            const dataPath = ['artifacts', appId, 'public', 'data', 'logs'];
-            // In a real scenario, we'd query for ownerId == null. 
-            // However, Firestore doesn't support 'not exists' easily without indexes.
-            // For now, let's fetch local and filter, or assume logs without ownerId are orphans.
             try {
-                const q = query(collection(db, ...dataPath), where('ownerId', '==', null));
+                const dataPath = ['artifacts', appId, 'public', 'data', 'logs'];
+                console.log("[CLAIM] Buscando logs en:", dataPath.join('/'));
+
+                const q = query(collection(db, ...dataPath)); // Traer todo y filtrar en cliente para debug
                 const snap = await getDocs(q);
+
+                console.log(`[CLAIM] Respuesta de Firestore: ${snap.docs.length} documentos.`);
+
                 const orphans = snap.docs
                     .map(d => ({ id: d.id, ...d.data() }))
                     .filter(l => !l.ownerId || l.ownerId === null);
 
-                console.log(`[CLAIM] Encontrados ${orphans.length} registros sin dueño.`);
-
+                console.log(`[CLAIM] Registros huérfanos filtrados: ${orphans.length}`);
                 setOrphanLogs(orphans);
             } catch (err) {
                 console.error("[CLAIM] Error al obtener registros:", err);

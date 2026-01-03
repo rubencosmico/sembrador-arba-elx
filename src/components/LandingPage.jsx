@@ -27,25 +27,13 @@ const LandingPage = ({
 
     useEffect(() => {
         const dataPath = ['artifacts', appId, 'public', 'data', 'campaigns'];
+        console.log("[LANDING] Iniciando carga de campañas en ruta:", dataPath.join('/'));
 
-        let q;
-        if (user) {
-            q = query(
-                collection(db, ...dataPath),
-                or(
-                    where('visibility', '==', 'public'),
-                    where('ownerId', '==', user.uid),
-                    where('participants', 'array-contains', user.uid)
-                )
-            );
-        } else {
-            q = query(
-                collection(db, ...dataPath),
-                where('visibility', '==', 'public')
-            );
-        }
+        // Consulta simplificada para ver si llega ALGO
+        const q = query(collection(db, ...dataPath));
 
         const unsubscribe = onSnapshot(q, (snap) => {
+            console.log(`[LANDING] Snapshot recibido. Documentos en bruto: ${snap.docs.length}`);
             const allCampaigns = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
             const visibleCampaigns = allCampaigns.filter(c => {
@@ -55,10 +43,11 @@ const LandingPage = ({
                 return false;
             });
 
+            console.log(`[LANDING] Campañas visibles tras filtrar: ${visibleCampaigns.length}`);
             setCampaigns(visibleCampaigns);
             setLoading(false);
         }, (err) => {
-            console.error("[LANDING] Error en snapshot:", err);
+            console.error("[LANDING] Error crítico en snapshot:", err);
             setLoading(false);
         });
 
