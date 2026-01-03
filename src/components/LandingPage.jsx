@@ -256,10 +256,15 @@ const LandingPage = ({
                                 const pos = c.coordinates || approxCoords[c.id];
                                 if (!pos) return null;
 
+                                const lat = pos.lat || pos.latitude;
+                                const lng = pos.lng || pos.longitude;
+
+                                if (typeof lat !== 'number' || typeof lng !== 'number') return null;
+
                                 return (
                                     <Marker
                                         key={c.id}
-                                        position={[pos.lat, pos.lng]}
+                                        position={[lat, lng]}
                                         eventHandlers={{
                                             click: () => onSelectCampaign(c),
                                         }}
