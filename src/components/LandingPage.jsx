@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, query, where, onSnapshot, or } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, getDocs, limit } from 'firebase/firestore';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -18,12 +18,42 @@ L.Marker.prototype.options.icon = DefaultIcon;
 
 const LandingPage = ({
     db, appId, user, isSuperAdmin,
-    onSelectCampaign, onLoginClick, onClaimClick, onAdminClick, onLogout,
-    onMessagesClick, onSocialClick
+    onSelectCampaign, onLoginClick, onClaimClick, onAdminClick,
+    onProfileClick, onManageClick,
+    onLogout, onMessagesClick, onSocialClick
 }) => {
     const [campaigns, setCampaigns] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showUserMenu, setShowUserMenu] = useState(false);
+    const [approxCoords, setApproxCoords] = useState({}); // { campaignId: {lat, lng} }
+
+    useEffect(() => {
+        // Fetch approximate coordinates for campaigns missing them
+        const missing = campaigns.filter(c => !c.coordinates);
+        if (missing.length === 0) return;
+
+        const fetchApprox = async () => {
+            const newCoords = { ...approxCoords };
+            for (const c of missing) {
+                if (newCoords[c.id]) continue;
+                try {
+                    const logsPath = ['artifacts', appId, 'public', 'data', 'logs'];
+                    const q = query(collection(db, ...logsPath), where('campaignId', '==', c.id), limit(1));
+                    const snap = await getDocs(q);
+                    if (!snap.empty) {
+                        const logData = snap.docs[0].data();
+                        if (logData.location) {
+                            newCoords[c.id] = { lat: logData.location.latitude, lng: logData.location.longitude };
+                        }
+                    }
+                } catch (err) {
+                    console.error("Error fetching approx coords for", c.id, err);
+                }
+            }
+            setApproxCoords(newCoords);
+        };
+        fetchApprox();
+    }, [campaigns, db, appId]);
 
     useEffect(() => {
         const dataPath = ['artifacts', appId, 'public', 'data', 'campaigns'];
@@ -105,6 +135,26 @@ const LandingPage = ({
                                         <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">Ajustes / Perfil</div>
                                     </div>
                                     <button
+                                        onClick={() => { setShowUserMenu(false); onProfileClick(); }}
+                                        className="w-full text-left px-4 py-3 rounded-xl hover:bg-slate-700/50 text-sm flex items-center space-x-3 transition-colors text-emerald-400 font-bold"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                        </svg>
+                                        <span>Mi Perfil</span>
+                                    </button>
+
+                                    <button
+                                        onClick={() => { setShowUserMenu(false); onManageClick(); }}
+                                        className="w-full text-left px-4 py-3 rounded-xl hover:bg-slate-700/50 text-sm flex items-center space-x-3 transition-colors"
+                                    >
+                                        <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                        </svg>
+                                        <span>Mis Jornadas</span>
+                                    </button>
+
+                                    <button
                                         onClick={() => { setShowUserMenu(false); onSocialClick(); }}
                                         className="w-full text-left px-4 py-3 rounded-xl hover:bg-slate-700/50 text-sm flex items-center space-x-3 transition-colors text-teal-400 font-bold"
                                     >
@@ -137,12 +187,12 @@ const LandingPage = ({
                                     {isSuperAdmin && (
                                         <button
                                             onClick={() => { setShowUserMenu(false); onAdminClick(); }}
-                                            className="w-full text-left px-4 py-3 rounded-xl hover:bg-slate-700/50 text-sm flex items-center space-x-3 transition-colors text-emerald-400 font-bold"
+                                            className="w-full text-left px-4 py-3 rounded-xl hover:bg-slate-700/50 text-sm flex items-center space-x-3 transition-colors text-purple-400 font-bold"
                                         >
                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                                             </svg>
-                                            <span>Panel Admin</span>
+                                            <span>Configuración Arba</span>
                                         </button>
                                     )}
 
@@ -202,11 +252,14 @@ const LandingPage = ({
                                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                             />
-                            {campaigns.map(c => (
-                                c.coordinates && (
+                            {campaigns.map(c => {
+                                const pos = c.coordinates || approxCoords[c.id];
+                                if (!pos) return null;
+
+                                return (
                                     <Marker
                                         key={c.id}
-                                        position={[c.coordinates.lat, c.coordinates.lng]}
+                                        position={[pos.lat, pos.lng]}
                                         eventHandlers={{
                                             click: () => onSelectCampaign(c),
                                         }}
@@ -224,8 +277,8 @@ const LandingPage = ({
                                             </div>
                                         </Popup>
                                     </Marker>
-                                )
-                            ))}
+                                );
+                            })}
                         </MapContainer>
 
                         {!user && (
@@ -265,8 +318,7 @@ const LandingPage = ({
                                 className="group bg-slate-800/40 hover:bg-slate-800/70 border border-slate-700/50 hover:border-emerald-500/50 rounded-3xl p-6 transition-all cursor-pointer transform hover:-translate-y-1"
                             >
                                 <div className="flex justify-between items-start mb-4">
-                                    <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${c.status === 'active' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-700 text-slate-400'
-                                        }`}>
+                                    <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${c.status === 'active' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-700 text-slate-400'}`}>
                                         {c.status === 'active' ? '● ACTIVA' : 'FINALIZADA'}
                                     </div>
                                     {c.visibility === 'private' && (

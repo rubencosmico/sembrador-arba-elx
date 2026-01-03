@@ -1,20 +1,76 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, updateDoc, doc } from 'firebase/firestore';
-import { PlusCircle, Power, Edit2, Check, X, ArrowLeft, Calendar, Globe, Lock, Link as LinkIcon } from 'lucide-react';
+import {
+    collection, query, orderBy, onSnapshot, addDoc,
+    serverTimestamp, updateDoc, doc, where, getDocs
+} from 'firebase/firestore';
+import {
+    PlusCircle, Power, Edit2, Check, X, ArrowLeft,
+    Calendar, Globe, Lock, Link as LinkIcon, Users,
+    Package, ArrowRight, UserPlus
+} from 'lucide-react';
 
-const CampaignManager = ({ db, appId, user, onBack }) => {
+const CampaignManager = ({ db, appId, user, isSuperAdmin, onBack }) => {
     const [allCampaigns, setAllCampaigns] = useState([]);
-    const [editingCampaign, setEditingCampaign] = useState(null);
+    const [editingCampaign, setEditingCampaign] = useState(null); // Simple name edit
+    const [selectedCampaignId, setSelectedCampaignId] = useState(null); // Deep management
     const [newCampaignName, setNewCampaignName] = useState('');
     const [isCreatingCampaign, setIsCreatingCampaign] = useState(false);
 
+    // Deep Management State
+    const [campSeeds, setCampSeeds] = useState([]);
+    const [participants, setParticipants] = useState([]);
+    const [newSeedName, setNewSeedName] = useState('');
+    const [newSeedQty, setNewSeedQty] = useState('');
+
     useEffect(() => {
-        const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'campaigns'), orderBy('createdAt', 'desc'));
+        let q;
+        const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'campaigns');
+
+        if (isSuperAdmin) {
+            q = query(colRef, orderBy('createdAt', 'desc'));
+        } else {
+            // For regular users, show their owned campaigns
+            q = query(colRef, where('ownerId', '==', user.uid), orderBy('createdAt', 'desc'));
+        }
+
         const unsubscribe = onSnapshot(q, (snap) => {
             setAllCampaigns(snap.docs.map(d => ({ id: d.id, ...d.data() })));
         });
         return () => unsubscribe();
-    }, [db, appId]);
+    }, [db, appId, user.uid, isSuperAdmin]);
+
+    // Load sub-data when a campaign is selected for deep management
+    useEffect(() => {
+        if (!selectedCampaignId) {
+            setCampSeeds([]);
+            setParticipants([]);
+            return;
+        }
+
+        const dataPath = ['artifacts', appId, 'public', 'data'];
+
+        // Seeds
+        const qSeeds = query(collection(db, ...dataPath, 'seeds'), where('campaignId', '==', selectedCampaignId));
+        const unsubSeeds = onSnapshot(qSeeds, (snap) => {
+            setCampSeeds(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        });
+
+        // Participants (fetch user profiles)
+        const camp = allCampaigns.find(c => c.id === selectedCampaignId);
+        if (camp?.participants?.length > 0) {
+            const fetchParticipants = async () => {
+                const uPros = [];
+                for (const uid of camp.participants) {
+                    const uDoc = await getDocs(query(collection(db, 'users'), where('__name__', '==', uid)));
+                    if (!uDoc.empty) uPros.push({ uid, ...uDoc.docs[0].data() });
+                }
+                setParticipants(uPros);
+            };
+            fetchParticipants();
+        }
+
+        return () => unsubSeeds();
+    }, [selectedCampaignId, db, appId, allCampaigns]);
 
     const handleCreateCampaign = async (e) => {
         e.preventDefault();
@@ -24,8 +80,9 @@ const CampaignManager = ({ db, appId, user, onBack }) => {
                 name: newCampaignName,
                 createdAt: serverTimestamp(),
                 status: 'active',
-                visibility: 'public', // Default
-                ownerId: user?.uid || null
+                visibility: 'public',
+                ownerId: user.uid,
+                participants: [user.uid] // Owner is the first participant
             });
             setNewCampaignName('');
             setIsCreatingCampaign(false);
@@ -45,123 +102,261 @@ const CampaignManager = ({ db, appId, user, onBack }) => {
         }
     };
 
+    const handleAddSeed = async (e) => {
+        e.preventDefault();
+        if (!newSeedName || !newSeedQty) return;
+        try {
+            await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'seeds'), {
+                campaignId: selectedCampaignId,
+                name: newSeedName,
+                totalQuantity: parseInt(newSeedQty),
+                assignedSeeds: [], // To track distribution
+                createdAt: serverTimestamp()
+            });
+            setNewSeedName('');
+            setNewSeedQty('');
+        } catch (e) {
+            console.error(e);
+        }
+    };
+
+    const handleAssignSeed = async (seedId, userId, qty) => {
+        const seed = campSeeds.find(s => s.id === seedId);
+        const currentAssignments = seed.assignedSeeds || [];
+
+        // Update or add assignment
+        const newAssignments = [...currentAssignments.filter(a => a.userId !== userId)];
+        if (qty > 0) {
+            newAssignments.push({ userId, quantity: parseInt(qty) });
+        }
+
+        try {
+            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'seeds', seedId), {
+                assignedSeeds: newAssignments
+            });
+        } catch (e) {
+            console.error(e);
+        }
+    };
+
+    // Deep Management View
+    if (selectedCampaignId) {
+        const camp = allCampaigns.find(c => c.id === selectedCampaignId);
+        return (
+            <div className="min-h-screen bg-slate-900 text-white p-6 font-sans pb-20">
+                <header className="mb-8 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                        <button onClick={() => setSelectedCampaignId(null)} className="p-2 bg-slate-800 rounded-xl hover:bg-slate-700 transition-colors">
+                            <ArrowLeft />
+                        </button>
+                        <div>
+                            <h2 className="text-xl font-bold">{camp?.name}</h2>
+                            <p className="text-xs text-slate-500">Mestión de recursos y participantes</p>
+                        </div>
+                    </div>
+                </header>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    {/* Seeds Section */}
+                    <section className="space-y-6">
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-lg font-bold flex items-center gap-2">
+                                <Package className="text-emerald-500" /> Semillas Disponibles
+                            </h3>
+                        </div>
+
+                        <form onSubmit={handleAddSeed} className="flex gap-2">
+                            <input
+                                placeholder="Especie..."
+                                className="flex-1 bg-slate-800 border-none rounded-xl p-3 text-sm"
+                                value={newSeedName}
+                                onChange={e => setNewSeedName(e.target.value)}
+                            />
+                            <input
+                                type="number"
+                                placeholder="Cant."
+                                className="w-20 bg-slate-800 border-none rounded-xl p-3 text-sm"
+                                value={newSeedQty}
+                                onChange={e => setNewSeedQty(e.target.value)}
+                            />
+                            <button type="submit" className="bg-emerald-500 p-3 rounded-xl hover:bg-emerald-600">
+                                <PlusCircle />
+                            </button>
+                        </form>
+
+                        <div className="space-y-3">
+                            {campSeeds.map(seed => (
+                                <div key={seed.id} className="bg-slate-800/50 p-4 rounded-2xl border border-slate-700/50">
+                                    <div className="flex justify-between items-center mb-4">
+                                        <span className="font-bold">{seed.name}</span>
+                                        <span className="text-xs bg-emerald-500/20 text-emerald-400 px-3 py-1 rounded-full">{seed.totalQuantity} total</span>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Asignar a mochilas:</p>
+                                        {participants.map(p => {
+                                            const assignment = seed.assignedSeeds?.find(a => a.userId === p.uid);
+                                            return (
+                                                <div key={p.uid} className="flex items-center justify-between text-sm bg-slate-900/50 p-2 rounded-lg">
+                                                    <span className="truncate max-w-[120px]">{p.displayName}</span>
+                                                    <input
+                                                        type="number"
+                                                        value={assignment?.quantity || ''}
+                                                        placeholder="0"
+                                                        onChange={(e) => handleAssignSeed(seed.id, p.uid, e.target.value)}
+                                                        className="w-16 bg-slate-800 border border-slate-700 rounded-md p-1 text-center text-xs"
+                                                    />
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+
+                    {/* Participants Section */}
+                    <section className="space-y-6">
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-lg font-bold flex items-center gap-2">
+                                <Users className="text-blue-500" /> Participantes ({participants.length})
+                            </h3>
+                            <button
+                                onClick={() => {
+                                    const link = `${window.location.origin}?join=${camp.id}`;
+                                    navigator.clipboard.writeText(link);
+                                    alert("Enlace copiado. Compártelo con quien quieras invitar.");
+                                }}
+                                className="text-xs bg-blue-500/10 text-blue-400 px-3 py-1.5 rounded-xl border border-blue-500/20 flex items-center gap-2"
+                            >
+                                <UserPlus size={14} /> Invitar
+                            </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {participants.map(p => (
+                                <div key={p.uid} className="flex items-center gap-3 bg-slate-800/30 p-3 rounded-2xl border border-slate-700/50">
+                                    {p.photoURL ? (
+                                        <img src={p.photoURL} className="w-8 h-8 rounded-full" alt="X" />
+                                    ) : (
+                                        <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-[10px] font-bold">
+                                            {p.displayName?.charAt(0)}
+                                        </div>
+                                    )}
+                                    <span className="text-sm font-medium truncate">{p.displayName}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+                </div>
+            </div>
+        );
+    }
+
     return (
-        <div className="min-h-screen bg-[#f1f5f0] p-6 font-sans">
-            <header className="mb-8 flex items-center gap-4">
-                <button onClick={onBack} className="p-2 bg-white rounded-xl shadow-sm hover:bg-emerald-50 text-emerald-800">
-                    <ArrowLeft />
-                </button>
-                <h1 className="text-2xl font-extrabold text-emerald-950">Gestión de Jornadas</h1>
+        <div className="min-h-screen bg-slate-950 text-white p-6 font-sans pb-24">
+            <header className="mb-10 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                    <button onClick={onBack} className="p-2 bg-slate-900 rounded-xl hover:bg-slate-800 transition-colors">
+                        <ArrowLeft />
+                    </button>
+                    <h1 className="text-3xl font-bold">Mis Jornadas</h1>
+                </div>
             </header>
 
-            <div className="max-w-4xl mx-auto space-y-6 animate-slideUp">
+            <div className="max-w-4xl mx-auto space-y-8">
                 {/* Create New */}
                 {!isCreatingCampaign ? (
                     <button
                         onClick={() => setIsCreatingCampaign(true)}
-                        className="w-full py-4 rounded-3xl border-2 border-dashed border-emerald-300 text-emerald-600 font-bold hover:bg-emerald-50 transition-all flex items-center justify-center gap-2 group"
+                        className="w-full py-6 rounded-3xl border-2 border-dashed border-slate-800 text-slate-500 font-bold hover:border-emerald-500/50 hover:text-emerald-500 hover:bg-emerald-500/5 transition-all flex items-center justify-center gap-3 group"
                     >
                         <PlusCircle className="group-hover:scale-110 transition-transform" />
-                        Nueva Jornada
+                        Crear Nueva Jornada de Siembra
                     </button>
                 ) : (
-                    <section className="glass-card p-6 rounded-3xl shadow-sm border border-emerald-100/50 bg-white">
-                        <h3 className="font-bold text-lg text-emerald-950 mb-4">Crear Nueva Jornada</h3>
-                        <form onSubmit={handleCreateCampaign} className="flex gap-3">
+                    <section className="bg-slate-900 p-6 rounded-3xl border border-emerald-500/30 shadow-2xl shadow-emerald-500/10 animate-fade-in">
+                        <h3 className="font-bold text-lg mb-6">Nueva Jornada</h3>
+                        <form onSubmit={handleCreateCampaign} className="flex flex-col sm:flex-row gap-4">
                             <input
                                 autoFocus
-                                placeholder="Nombre de la jornada..."
-                                className="flex-1 p-3 bg-emerald-900/5 border border-transparent rounded-xl focus:bg-white outline-none font-medium"
+                                placeholder="Nombre de la jornada (ej: Reforestación Sierra Elx)..."
+                                className="flex-1 p-4 bg-slate-800 border border-slate-700 rounded-2xl focus:ring-2 focus:ring-emerald-500/50 outline-none font-medium"
                                 value={newCampaignName}
                                 onChange={e => setNewCampaignName(e.target.value)}
                             />
-                            <button type="button" onClick={() => setIsCreatingCampaign(false)} className="px-4 py-2 font-bold text-emerald-600 hover:bg-emerald-50 rounded-xl">Cancelar</button>
-                            <button type="submit" className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold">Crear</button>
+                            <div className="flex gap-2">
+                                <button type="button" onClick={() => setIsCreatingCampaign(false)} className="flex-1 sm:flex-none px-6 py-4 font-bold text-slate-400 hover:bg-slate-800 rounded-2xl transition-colors">Cancelar</button>
+                                <button type="submit" className="flex-1 sm:flex-none px-8 py-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl font-bold shadow-lg shadow-emerald-500/20 transition-all">Crear</button>
+                            </div>
                         </form>
                     </section>
                 )}
 
                 {/* List */}
-                <div className="grid gap-4">
+                <div className="grid gap-6">
+                    {allCampaigns.length === 0 && !isCreatingCampaign && (
+                        <div className="text-center py-20 bg-slate-900/50 rounded-3xl border border-slate-800 border-dashed">
+                            <p className="text-slate-500">Aún no has creado ninguna jornada. ¡Empieza hoy mismo!</p>
+                        </div>
+                    )}
+
                     {allCampaigns.map(camp => (
-                        <div key={camp.id} className={`glass-card bg-white p-6 rounded-3xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${camp.status === 'active' ? 'border-emerald-500 shadow-md ring-1 ring-emerald-500/20' : 'border-emerald-100/50 opacity-80'}`}>
-
-                            <div className="flex-1">
-                                {editingCampaign?.id === camp.id ? (
-                                    <form
-                                        onSubmit={(e) => {
-                                            e.preventDefault();
-                                            handleUpdateCampaign(camp.id, { name: editingCampaign.name });
-                                        }}
-                                        className="flex gap-2"
-                                    >
-                                        <input
-                                            className="flex-1 p-2 bg-white border border-emerald-200 rounded-lg font-bold text-lg text-emerald-900"
-                                            value={editingCampaign.name}
-                                            onChange={e => setEditingCampaign({ ...editingCampaign, name: e.target.value })}
-                                        />
-                                        <button type="submit" className="p-2 bg-emerald-100 text-emerald-700 rounded-lg"><Check size={18} /></button>
-                                        <button type="button" onClick={() => setEditingCampaign(null)} className="p-2 text-red-400 hover:bg-red-50 rounded-lg"><X size={18} /></button>
-                                    </form>
-                                ) : (
-                                    <>
-                                        <div className="flex items-center gap-3 mb-1">
-                                            <div className={`p-2 rounded-lg ${camp.status === 'active' ? 'bg-emerald-100 text-emerald-600' : 'bg-gray-100 text-gray-400'}`}>
-                                                <Calendar size={20} />
-                                            </div>
-                                            <h3 className="font-bold text-lg text-emerald-950">{camp.name}</h3>
-                                            {camp.status === 'active' && <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full uppercase font-bold tracking-wider">Activa</span>}
+                        <div key={camp.id} className={`group bg-slate-900 p-6 rounded-3xl border transition-all ${camp.status === 'active' ? 'border-emerald-500/30 hover:border-emerald-500/60' : 'border-slate-800 opacity-70 grayscale'}`}>
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                                <div className="flex-1">
+                                    <div className="flex items-center gap-3 mb-2">
+                                        <div className={`p-2 rounded-xl ${camp.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500'}`}>
+                                            <Calendar size={20} />
                                         </div>
-                                        <div className="text-xs font-semibold text-emerald-800/40 uppercase tracking-widest pl-12">
-                                            Creada: {camp.createdAt?.seconds ? new Date(camp.createdAt.seconds * 1000).toLocaleDateString() : '—'}
+                                        <h3 className="font-bold text-xl">{camp.name}</h3>
+                                    </div>
+                                    <div className="flex items-center gap-4 text-xs font-bold text-slate-500 uppercase tracking-widest pl-11">
+                                        <div className="flex items-center gap-1.5">
+                                            {camp.visibility === 'public' ? <Globe size={14} className="text-blue-400" /> : <Lock size={14} className="text-orange-400" />}
+                                            <span className={camp.visibility === 'public' ? 'text-blue-400' : 'text-orange-400'}>{camp.visibility === 'public' ? 'Pública' : 'Privada'}</span>
                                         </div>
-                                    </>
-                                )}
-                            </div>
+                                        <span>•</span>
+                                        <div className="flex items-center gap-1.5">
+                                            <Users size={14} />
+                                            <span>{camp.participants?.length || 0} Participantes</span>
+                                        </div>
+                                    </div>
+                                </div>
 
-                            <div className="flex items-center gap-2 pl-12 sm:pl-0">
-                                {/* Toggle Status */}
-                                <button
-                                    onClick={() => handleUpdateCampaign(camp.id, { status: camp.status === 'active' ? 'inactive' : 'active' })}
-                                    className={`p-3 rounded-xl font-bold text-xs flex items-center gap-2 transition-colors ${camp.status === 'active' ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
-                                    title={camp.status === 'active' ? 'Desactivar' : 'Activar'}
-                                >
-                                    <Power size={18} />
-                                    {camp.status === 'active' ? 'Desactivar' : 'Activar'}
-                                </button>
-
-                                {/* Toggle Visibility */}
-                                <button
-                                    onClick={() => handleUpdateCampaign(camp.id, { visibility: camp.visibility === 'public' ? 'private' : 'public' })}
-                                    className={`p-3 rounded-xl font-bold text-xs flex items-center gap-2 transition-colors ${camp.visibility === 'public' ? 'bg-blue-50 text-blue-600 hover:bg-blue-100' : 'bg-orange-50 text-orange-600 hover:bg-orange-100'}`}
-                                    title={camp.visibility === 'public' ? 'Hacer Privada' : 'Hacer Pública'}
-                                >
-                                    {camp.visibility === 'public' ? <Globe size={18} /> : <Lock size={18} />}
-                                    {camp.visibility === 'public' ? 'Pública' : 'Privada'}
-                                </button>
-
-                                {/* Copy Join Link (if private) */}
-                                {camp.visibility === 'private' && (
+                                <div className="flex flex-wrap items-center gap-2 pl-11 md:pl-0">
                                     <button
-                                        onClick={() => {
-                                            const link = `${window.location.origin}?join=${camp.id}`;
-                                            navigator.clipboard.writeText(link);
-                                            alert("Enlace de invitación copiado");
-                                        }}
-                                        className="p-3 bg-white border border-emerald-100 text-emerald-600 rounded-xl hover:bg-emerald-50 transition-colors"
-                                        title="Copiar enlace de invitación"
+                                        onClick={() => setSelectedCampaignId(camp.id)}
+                                        className="p-3 bg-slate-800 hover:bg-emerald-500 text-white rounded-xl transition-all flex items-center gap-2 font-bold text-sm"
                                     >
-                                        <LinkIcon size={18} />
+                                        <Package size={18} />
+                                        <span>Gestionar</span>
+                                        <ArrowRight size={16} />
                                     </button>
-                                )}
 
-                                {/* Edit Name */}
-                                <button
-                                    onClick={() => setEditingCampaign(camp)}
-                                    className="p-3 bg-white border border-emerald-100 text-emerald-600 rounded-xl hover:bg-emerald-50 transition-colors"
-                                >
-                                    <Edit2 size={18} />
-                                </button>
+                                    <button
+                                        onClick={() => handleUpdateCampaign(camp.id, { status: camp.status === 'active' ? 'inactive' : 'active' })}
+                                        className={`p-3 rounded-xl font-bold text-xs flex items-center gap-2 transition-colors ${camp.status === 'active' ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20' : 'bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20'}`}
+                                    >
+                                        <Power size={18} />
+                                        {camp.status === 'active' ? 'Finalizar' : 'Activar'}
+                                    </button>
+
+                                    <button
+                                        onClick={() => handleUpdateCampaign(camp.id, { visibility: camp.visibility === 'public' ? 'private' : 'public' })}
+                                        className="p-3 bg-slate-800 text-slate-400 rounded-xl hover:text-white transition-colors"
+                                        title="Cambiar visibilidad"
+                                    >
+                                        {camp.visibility === 'public' ? <Globe size={18} /> : <Lock size={18} />}
+                                    </button>
+
+                                    <button
+                                        onClick={() => setEditingCampaign(camp)}
+                                        className="p-3 bg-slate-800 text-slate-400 rounded-xl hover:text-white transition-colors"
+                                    >
+                                        <Edit2 size={18} />
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     ))}

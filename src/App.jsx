@@ -21,6 +21,7 @@ import SuperAdminDashboard from './components/SuperAdminDashboard';
 import MessagesView from './components/MessagesView';
 import ChatWindow from './components/ChatWindow';
 import SocialView from './components/SocialView';
+import ProfileView from './components/ProfileView';
 
 // Utils
 import MigratePhotos from './utils/migrate-photos';
@@ -32,7 +33,7 @@ function App() {
     const [userProfile, setUserProfile] = useState(null);
     const [isSuperAdmin, setIsSuperAdmin] = useState(false);
     const [showLogin, setShowLogin] = useState(false);
-    const [currentView, setCurrentView] = useState('home'); // 'home' | 'claim' | 'admin' | 'messages' | 'chat' | 'social'
+    const [currentView, setCurrentView] = useState('home'); // 'home' | 'claim' | 'admin' | 'messages' | 'chat' | 'social' | 'profile' | 'manage'
     const [chatPartnerId, setChatPartnerId] = useState(null);
     const [role, setRole] = useState(null); // 'coordinator' | 'sower'
     const [campaign, setCampaign] = useState(null); // { id, name, status }
@@ -182,9 +183,9 @@ function App() {
         return <LoginScreen onLoginSuccess={(u) => { setUser(u); setShowLogin(false); }} />;
     }
 
-    // 1. Campaign Manager (Admin only)
-    if (isManagingCampaigns) {
-        return <CampaignManager db={db} appId={appId} user={user} onBack={() => setIsManagingCampaigns(false)} />;
+    // 1. Campaign Manager / My Campaigns
+    if (currentView === 'manage' && user) {
+        return <CampaignManager db={db} appId={appId} user={user} isSuperAdmin={isSuperAdmin} onBack={() => setCurrentView('home')} />;
     }
 
     // 2. Specialized Internal Views
@@ -226,6 +227,16 @@ function App() {
         );
     }
 
+    if (currentView === 'profile' && user) {
+        return (
+            <ProfileView
+                db={db} user={user} userProfile={userProfile}
+                onBack={() => setCurrentView('home')}
+                onUpdateProfile={(p) => setUserProfile(p)}
+            />
+        );
+    }
+
     // 3. Main Entry: Landing Page (if no campaign selected)
     if (!campaign) {
         return (
@@ -236,6 +247,8 @@ function App() {
                 onLoginClick={() => setShowLogin(true)}
                 onClaimClick={() => setCurrentView('claim')}
                 onAdminClick={() => setCurrentView('admin')}
+                onProfileClick={() => setCurrentView('profile')}
+                onManageClick={() => setCurrentView('manage')}
                 onMessagesClick={() => setCurrentView('messages')}
                 onSocialClick={() => setCurrentView('social')}
                 onLogout={handleLogout}
