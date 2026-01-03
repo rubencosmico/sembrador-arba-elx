@@ -1,18 +1,23 @@
-import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
-import { signInAnonymously } from 'firebase/auth';
+import {
+    db, auth, storage, appId,
+    onAuthStateChanged,
+    signOut
+} from './firebase';
+import { doc, getDoc, setDoc, updateDoc, arrayUnion } from 'firebase/firestore';
 
-// Firebase Config
-import { db, auth, storage, appId } from './firebase';
-
-// Components
 // Components
 import LoadingScreen from './components/LoadingScreen';
+import LoginScreen from './components/LoginScreen';
+import LandingPage from './components/LandingPage';
 import WelcomeScreen from './components/WelcomeScreen';
-import CampaignSelector from './components/CampaignSelector';
 import CoordinatorView from './components/CoordinatorView';
 import SowerView from './components/SowerView';
 import CampaignManager from './components/CampaignManager';
+import ClaimRecordsView from './components/ClaimRecordsView';
+import SuperAdminDashboard from './components/SuperAdminDashboard';
+import MessagesView from './components/MessagesView';
+import ChatWindow from './components/ChatWindow';
+import SocialView from './components/SocialView';
 
 // Utils
 import MigratePhotos from './utils/migrate-photos';
@@ -21,6 +26,11 @@ import { useOfflineQueue } from './hooks/useOfflineQueue';
 
 function App() {
     const [user, setUser] = useState(null);
+    const [userProfile, setUserProfile] = useState(null);
+    const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+    const [showLogin, setShowLogin] = useState(false);
+    const [currentView, setCurrentView] = useState('home'); // 'home' | 'claim' | 'admin' | 'messages' | 'chat' | 'social'
+    const [chatPartnerId, setChatPartnerId] = useState(null);
     const [role, setRole] = useState(null); // 'coordinator' | 'sower'
     const [campaign, setCampaign] = useState(null); // { id, name, status }
     const [isManagingCampaigns, setIsManagingCampaigns] = useState(false);
@@ -28,23 +38,79 @@ function App() {
     // Data
     const [seeds, setSeeds] = useState([]);
     const [groups, setGroups] = useState([]);
-    const [logs, setLogs] = useState([]); // Only fetched for coordinator usually, or small scale
+    const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(true);
 
     // Offline Queue
     const { isOnline, pendingCount, saveToQueue } = useOfflineQueue(storage, db);
 
-    // Auth
+    // Auth & Profile
     useEffect(() => {
-        signInAnonymously(auth).then((u) => {
-            console.log("Auth success", u.user.uid);
-            setUser(u.user);
-            setLoading(false);
-        }).catch(err => {
-            console.error("Auth failed", err);
+        const unsubscribe = onAuthStateChanged(auth, async (u) => {
+            if (u) {
+                setUser(u);
+
+                // Fetch/Create Profile
+                const userDocRef = doc(db, 'users', u.uid);
+                const userDoc = await getDoc(userDocRef);
+
+                if (userDoc.exists()) {
+                    setUserProfile(userDoc.data());
+                } else {
+                    const newProfile = {
+                        displayName: u.displayName || 'Sembrador Anónimo',
+                        email: u.email,
+                        photoURL: u.photoURL || null,
+                        createdAt: new Date(),
+                        defaultRole: 'sower'
+                    };
+                    await setDoc(userDocRef, newProfile);
+                    setUserProfile(newProfile);
+                }
+
+                // Check SuperAdmin (Secure Collection)
+                const adminDoc = await getDoc(doc(db, 'admins', u.uid));
+                setIsSuperAdmin(adminDoc.exists());
+
+            } else {
+                setUser(null);
+                setUserProfile(null);
+                setIsSuperAdmin(false);
+            }
             setLoading(false);
         });
+
+        return () => unsubscribe();
     }, []);
+
+    // Handle Join Links
+    useEffect(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const joinId = urlParams.get('join');
+
+        if (joinId && user) {
+            const processJoin = async () => {
+                const campRef = doc(db, 'artifacts', appId, 'public', 'data', 'campaigns', joinId);
+                const campSnap = await getDoc(campRef);
+
+                if (campSnap.exists()) {
+                    await updateDoc(campRef, {
+                        participants: arrayUnion(user.uid)
+                    });
+                    setCampaign({ id: joinId, ...campSnap.data() });
+                    // Clean URL
+                    window.history.replaceState({}, document.title, "/");
+                }
+            };
+            processJoin();
+        }
+    }, [user, appId]);
+
+    const handleLogout = () => {
+        signOut(auth);
+        setCampaign(null);
+        setRole(null);
+    };
 
     // Load Data - Dependent on Campaign
     useEffect(() => {
@@ -86,29 +152,68 @@ function App() {
 
     if (loading) return <LoadingScreen />;
 
-    // Modo migración: acceder con ?migrate=photos
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('migrate') === 'photos') {
-        return <MigratePhotos db={db} appId={appId} storage={storage} />;
+    // 0. Login Override
+    if (showLogin && !user) {
+        return <LoginScreen onLoginSuccess={(u) => { setUser(u); setShowLogin(false); }} />;
     }
 
-    if (urlParams.get('diagnostic') === 'true') {
-        return <StorageDiagnostic db={db} appId={appId} storage={storage} />;
-    }
-
-    // 0. Campaign Manager
+    // 1. Campaign Manager (Admin only)
     if (isManagingCampaigns) {
-        return <CampaignManager db={db} appId={appId} onBack={() => setIsManagingCampaigns(false)} />;
+        return <CampaignManager db={db} appId={appId} user={user} onBack={() => setIsManagingCampaigns(false)} />;
     }
 
-    // 1. Select Campaign
+    // 2. Specialized Internal Views
+    if (currentView === 'claim' && user) {
+        return <ClaimRecordsView db={db} appId={appId} user={user} onBack={() => setCurrentView('home')} />;
+    }
+
+    if (currentView === 'admin' && isSuperAdmin) {
+        return <SuperAdminDashboard db={db} appId={appId} onBack={() => setCurrentView('home')} />;
+    }
+
+    if (currentView === 'messages' && user) {
+        return (
+            <MessagesView
+                db={db} user={user}
+                onSelectChat={(id) => { setChatPartnerId(id); setCurrentView('chat'); }}
+                onBack={() => setCurrentView('home')}
+            />
+        );
+    }
+
+    if (currentView === 'chat' && user && chatPartnerId) {
+        return (
+            <ChatWindow
+                db={db} user={user}
+                otherUserId={chatPartnerId}
+                onBack={() => setCurrentView('messages')}
+            />
+        );
+    }
+
+    if (currentView === 'social' && user) {
+        return (
+            <SocialView
+                db={db} user={user}
+                onBack={() => setCurrentView('home')}
+                onChatClick={(id) => { setChatPartnerId(id); setCurrentView('chat'); }}
+            />
+        );
+    }
+
+    // 3. Main Entry: Landing Page (if no campaign selected)
     if (!campaign) {
         return (
-            <CampaignSelector
-                db={db}
-                appId={appId}
-                onSelectCampaign={setCampaign}
-                onManage={user?.uid ? () => setIsManagingCampaigns(true) : null}
+            <LandingPage
+                db={db} appId={appId} user={user}
+                isSuperAdmin={isSuperAdmin}
+                onSelectCampaign={(c) => setCampaign(c)}
+                onLoginClick={() => setShowLogin(true)}
+                onClaimClick={() => setCurrentView('claim')}
+                onAdminClick={() => setCurrentView('admin')}
+                onMessagesClick={() => setCurrentView('messages')}
+                onSocialClick={() => setCurrentView('social')}
+                onLogout={handleLogout}
             />
         );
     }

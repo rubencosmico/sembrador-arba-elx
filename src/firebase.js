@@ -26,3 +26,10 @@ export const db = initializeFirestore(app, {
 });
 export const auth = getAuth(app);
 export const storage = getStorage(app);
+export {
+    GoogleAuthProvider,
+    EmailAuthProvider,
+    onAuthStateChanged,
+    signOut,
+    signInWithPopup
+} from 'firebase/auth';

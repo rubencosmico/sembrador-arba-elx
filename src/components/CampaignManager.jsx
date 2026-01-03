@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, updateDoc, doc } from 'firebase/firestore';
-import { PlusCircle, Power, Edit2, Check, X, ArrowLeft, Calendar } from 'lucide-react';
+import { PlusCircle, Power, Edit2, Check, X, ArrowLeft, Calendar, Globe, Lock, Link as LinkIcon } from 'lucide-react';
 
-const CampaignManager = ({ db, appId, onBack }) => {
+const CampaignManager = ({ db, appId, user, onBack }) => {
     const [allCampaigns, setAllCampaigns] = useState([]);
     const [editingCampaign, setEditingCampaign] = useState(null);
     const [newCampaignName, setNewCampaignName] = useState('');
@@ -23,7 +23,9 @@ const CampaignManager = ({ db, appId, onBack }) => {
             await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'campaigns'), {
                 name: newCampaignName,
                 createdAt: serverTimestamp(),
-                status: 'active'
+                status: 'active',
+                visibility: 'public', // Default
+                ownerId: user?.uid || null
             });
             setNewCampaignName('');
             setIsCreatingCampaign(false);
@@ -127,6 +129,31 @@ const CampaignManager = ({ db, appId, onBack }) => {
                                     <Power size={18} />
                                     {camp.status === 'active' ? 'Desactivar' : 'Activar'}
                                 </button>
+
+                                {/* Toggle Visibility */}
+                                <button
+                                    onClick={() => handleUpdateCampaign(camp.id, { visibility: camp.visibility === 'public' ? 'private' : 'public' })}
+                                    className={`p-3 rounded-xl font-bold text-xs flex items-center gap-2 transition-colors ${camp.visibility === 'public' ? 'bg-blue-50 text-blue-600 hover:bg-blue-100' : 'bg-orange-50 text-orange-600 hover:bg-orange-100'}`}
+                                    title={camp.visibility === 'public' ? 'Hacer Privada' : 'Hacer Pública'}
+                                >
+                                    {camp.visibility === 'public' ? <Globe size={18} /> : <Lock size={18} />}
+                                    {camp.visibility === 'public' ? 'Pública' : 'Privada'}
+                                </button>
+
+                                {/* Copy Join Link (if private) */}
+                                {camp.visibility === 'private' && (
+                                    <button
+                                        onClick={() => {
+                                            const link = `${window.location.origin}?join=${camp.id}`;
+                                            navigator.clipboard.writeText(link);
+                                            alert("Enlace de invitación copiado");
+                                        }}
+                                        className="p-3 bg-white border border-emerald-100 text-emerald-600 rounded-xl hover:bg-emerald-50 transition-colors"
+                                        title="Copiar enlace de invitación"
+                                    >
+                                        <LinkIcon size={18} />
+                                    </button>
+                                )}
 
                                 {/* Edit Name */}
                                 <button
