@@ -30,3 +30,7 @@ dist-ssr
 *.sw?
 playwright-report/
 test-results/
+
+# Firebase & Scripts
+service-account.json
+.features-gen/
