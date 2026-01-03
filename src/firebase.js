@@ -1,7 +1,8 @@
 import { initializeApp } from 'firebase/app';
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, EmailAuthProvider, onAuthStateChanged, signOut, signInWithPopup } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
+import { getMessaging } from 'firebase/messaging';
 
 const getFirebaseConfig = () => {
     if (typeof __firebase_config !== 'undefined') return JSON.parse(__firebase_config || '{}');
@@ -26,10 +27,6 @@ export const db = initializeFirestore(app, {
 });
 export const auth = getAuth(app);
 export const storage = getStorage(app);
-export {
-    GoogleAuthProvider,
-    EmailAuthProvider,
-    onAuthStateChanged,
-    signOut,
-    signInWithPopup
-} from 'firebase/auth';
+const messaging = typeof window !== 'undefined' ? getMessaging(app) : null;
+
+export { db, auth, storage, messaging, appId, GoogleAuthProvider, EmailAuthProvider, onAuthStateChanged, signOut, signInWithPopup };

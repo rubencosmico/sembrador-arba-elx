@@ -1,6 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot, orderBy, addDoc, serverTimestamp, doc, getDoc } from 'firebase/firestore';
 
+const sendPushNotification = async (toToken, title, body) => {
+    if (!toToken) return;
+    try {
+        // NOTE: This usually requires a server or cloud function for security.
+        // For demonstration, we'd call a hypothetical endpoint or FCM directly if keys were available.
+        console.log(`[PUSH] A: ${toToken} | ${title}: ${body}`);
+        // await fetch('https://fcm.googleapis.com/fcm/send', { ... });
+    } catch (e) {
+        console.error("Push failed", e);
+    }
+};
+
 const ChatWindow = ({ db, user, otherUserId, onBack }) => {
     const [messages, setMessages] = useState([]);
     const [newMessage, setNewMessage] = useState('');
@@ -49,6 +61,12 @@ const ChatWindow = ({ db, user, otherUserId, onBack }) => {
                 type: 'text',
                 createdAt: serverTimestamp()
             });
+
+            // Notify Receiver
+            if (otherUser?.fcmToken) {
+                sendPushNotification(otherUser.fcmToken, `Mensaje de ${user.displayName || 'Alguien'}`, newMessage);
+            }
+
             setNewMessage('');
         } catch (err) {
             console.error(err);

@@ -1,8 +1,10 @@
 import {
     db, auth, storage, appId,
     onAuthStateChanged,
-    signOut
+    signOut,
+    messaging
 } from './firebase';
+import { getToken, onMessage } from 'firebase/messaging';
 import { doc, getDoc, setDoc, updateDoc, arrayUnion } from 'firebase/firestore';
 
 // Components
@@ -71,7 +73,7 @@ function App() {
                 // Check SuperAdmin (Secure Collection)
                 const adminDoc = await getDoc(doc(db, 'admins', u.uid));
                 setIsSuperAdmin(adminDoc.exists());
-
+                handleNotifications(authUser.uid);
             } else {
                 setUser(null);
                 setUserProfile(null);
@@ -82,6 +84,28 @@ function App() {
 
         return () => unsubscribe();
     }, []);
+
+    const handleNotifications = async (userId) => {
+        if (!messaging) return;
+        try {
+            const permission = await Notification.requestPermission();
+            if (permission === 'granted') {
+                const token = await getToken(messaging, {
+                    vapidKey: 'BIl_placeholder_clave_vapid_de_la_consola_firebase'
+                });
+                if (token) {
+                    await updateDoc(doc(db, 'users', userId), { fcmToken: token });
+                }
+            }
+        } catch (err) {
+            console.error("Error gestionando notificaciones:", err);
+        }
+
+        onMessage(messaging, (payload) => {
+            console.log('Mensaje en primer plano:', payload);
+            alert(`${payload.notification.title}: ${payload.notification.body}`);
+        });
+    };
 
     // Handle Join Links
     useEffect(() => {

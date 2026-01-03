@@ -1,5 +1,11 @@
+```javascript
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, doc, updateDoc, writeBatch } from 'firebase/firestore';
+import { collection, query, onSnapshot, doc, getDoc, updateDoc, writeBatch } from 'firebase/firestore';
+
+const sendPushNotification = async (toToken, title, body) => {
+    if (!toToken) return;
+    console.log(`[PUSH] A: ${ toToken } | ${ title }: ${ body } `);
+};
 
 const SuperAdminDashboard = ({ db, appId, onBack }) => {
     const [requests, setRequests] = useState([]);
@@ -32,8 +38,20 @@ const SuperAdminDashboard = ({ db, appId, onBack }) => {
             }
 
             await batch.commit();
+
+            // Notify User
+            if (userId) {
+                const userDoc = await getDoc(doc(db, 'users', userId));
+                if (userDoc.exists() && userDoc.data().fcmToken) {
+                    const msg = status === 'approved' ? 'Tu reclamación ha sido APROBADA' : 'Tu reclamación ha sido RECHAZADA';
+                    sendPushNotification(userDoc.data().fcmToken, 'Actualización de Reclamación', msg);
+                }
+            }
+
+            setRequests(prev => prev.filter(r => r.id !== requestId));
         } catch (err) {
             console.error(err);
+            setActioning(false);
         } finally {
             setActioning(false);
         }
