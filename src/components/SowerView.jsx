@@ -13,6 +13,7 @@ import { getOfflinePhoto } from '../utils/db'; // Import DB utility
 
 const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onResetRole, isReadOnly, isOnline, pendingCount, saveToQueue }) => {
     const [selectedGroupId, setSelectedGroupId] = useState(null);
+    const [isUserCentric, setIsUserCentric] = useState(false);
     const [groupStats, setGroupStats] = useState({});
     const [showManual, setShowManual] = useState(false);
     const [view, setView] = useState('form');
@@ -41,9 +42,21 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
     const [logsPerPage, setLogsPerPage] = useState(10);
     const PAGE_SIZE_OPTIONS = [5, 10, 20, 50];
 
-    // Efecto para cargar estadísticas de grupos
+    // Check for user-centricity and auto-select
     useEffect(() => {
-        if (selectedGroupId || !campaignId) return;
+        // A campaign is modern if it has participants and the user is one of them, 
+        // OR if it has no groups.
+        const isModern = groups.length === 0 || (seeds.some(s => s.userAssignments?.length > 0));
+
+        if (isModern && userId && !selectedGroupId) {
+            setIsUserCentric(true);
+            setSelectedGroupId(`user_${userId}`);
+        }
+    }, [groups, seeds, userId, selectedGroupId]);
+
+    // Efecto para cargar estadísticas de grupos (Only if not user-centric or if selecting)
+    useEffect(() => {
+        if (selectedGroupId || !campaignId || isUserCentric) return;
 
         const q = query(
             collection(db, 'artifacts', appId, 'public', 'data', 'logs'),
@@ -72,7 +85,7 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
         return allTeamLogs.reduce((acc, log) => acc + (parseInt(log.holeCount) || 1), 0);
     }, [allTeamLogs]);
 
-    // Cargar todos los logs de la campaña y filtrar por equipo
+    // Cargar todos los logs de la campaña y filtrar por equipo/usuario
     useEffect(() => {
         if (!selectedGroupId || !campaignId) return;
 
@@ -83,13 +96,25 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
 
             try {
                 const logsRef = collection(db, 'artifacts', appId, 'public', 'data', 'logs');
-                const q = query(
-                    logsRef,
-                    where('campaignId', '==', campaignId),
-                    where('groupId', '==', selectedGroupId),
-                    orderBy('timestamp', 'desc'),
-                    limit(500)
-                );
+                let q;
+
+                if (isUserCentric) {
+                    q = query(
+                        logsRef,
+                        where('campaignId', '==', campaignId),
+                        where('userId', '==', userId),
+                        orderBy('timestamp', 'desc'),
+                        limit(500)
+                    );
+                } else {
+                    q = query(
+                        logsRef,
+                        where('campaignId', '==', campaignId),
+                        where('groupId', '==', selectedGroupId),
+                        orderBy('timestamp', 'desc'),
+                        limit(500)
+                    );
+                }
 
                 const snapshot = await getDocs(q);
                 const teamLogs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -102,7 +127,7 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
         };
 
         fetchLogs();
-    }, [selectedGroupId, campaignId, db, appId]);
+    }, [selectedGroupId, campaignId, db, appId, isUserCentric, userId]);
 
     // Resetear página cuando cambian filtros o resultados por página
     useEffect(() => {
@@ -241,9 +266,9 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
                 syncStatus,
                 campaignId,
                 groupId: selectedGroupId,
-                groupName: selectedGroup?.name || 'Desconocido',
+                groupName: isUserCentric ? (window.localStorage.getItem('userDisplayName') || 'Sembrador') : (selectedGroup?.name || 'Desconocido'),
                 userId,
-                timestamp: serverTimestamp() // This will resolve locally instantly
+                timestamp: serverTimestamp()
             };
 
             if (editingLog) {
@@ -273,8 +298,18 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
         }
     };
 
-    const selectedGroup = groups.find(g => g.id === selectedGroupId);
-    const mySeeds = selectedGroup ? seeds.filter(s => selectedGroup.assignedSeeds?.includes(s.id)) : [];
+    const selectedGroup = !isUserCentric ? groups.find(g => g.id === selectedGroupId) : null;
+
+    // Filter seeds: 
+    // 1. If userCentric, show seeds where userAssignments has current userId
+    // 2. If groupCentric, show seeds where assignedSeeds has groupId
+    const mySeeds = useMemo(() => {
+        if (isUserCentric) {
+            return seeds.filter(s => s.userAssignments?.some(a => a.userId === userId));
+        }
+        return selectedGroup ? seeds.filter(s => selectedGroup.assignedSeeds?.includes(s.id)) : [];
+    }, [isUserCentric, seeds, userId, selectedGroup]);
+
     const totalHoles = totalTeamHoles; // Usar el cálculo desde allTeamLogs
 
     if (!selectedGroupId) {
@@ -344,6 +379,7 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
 
     const exitGroup = () => {
         setSelectedGroupId(null);
+        setIsUserCentric(false);
         setEditingLog(null);
         setView('form');
     };
@@ -387,7 +423,9 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
                                 !isOnline ? <WifiOff size={10} className="text-gray-400 ml-1" /> : <Wifi size={10} className="text-emerald-400 ml-1" />
                             )}
                         </div>
-                        <h2 className="text-xl font-extrabold text-emerald-950 leading-none">{selectedGroup.name}</h2>
+                        <h2 className="text-xl font-extrabold text-emerald-950 leading-none">
+                            {isUserCentric ? 'Misión Personal' : (selectedGroup?.name || 'Cargando...')}
+                        </h2>
                     </div>
                 </div>
                 <div className="bg-emerald-950 text-white px-4 py-2 rounded-2xl shadow-lg border border-emerald-800 flex flex-col items-center min-w-[70px] relative">

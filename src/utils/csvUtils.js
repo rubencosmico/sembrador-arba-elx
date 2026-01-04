@@ -1,5 +1,5 @@
 export const generateLogCSV = (logs, seeds, campaignId) => {
-    const headers = ["Fecha", "Hora", "Jornada", "Equipo", "Especie", "Tratamiento", "Micrositio", "Orientación", "Semillas/Hoyo", "Protector", "Sustrato", "Lat", "Lng", "Golpes", "Notas", "Foto URL"];
+    const headers = ["Fecha", "Hora", "Jornada", "Equipo", "Especie", "Proveedor", "Tratamiento", "Micrositio", "Orientación", "Semillas/Hoyo", "Protector", "Sustrato", "Lat", "Lng", "Golpes", "Notas", "Foto URL"];
     const rows = logs.map(log => {
         const date = log.timestamp?.seconds ? new Date(log.timestamp.seconds * 1000) : null;
         const seed = seeds.find(s => s.id === log.seedId);
@@ -9,6 +9,7 @@ export const generateLogCSV = (logs, seeds, campaignId) => {
             campaignId,
             log.groupName,
             log.seedName,
+            seed?.provider || '',
             seed?.treatment || '',
             log.microsite,
             log.orientation || '',

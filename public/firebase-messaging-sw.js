@@ -1,4 +1,4 @@
-// v1.0.1 - Force update
+// v1.0.2 - Force update
 // Import and configure the Firebase SDK
 // Using importScripts for static service worker compatibility
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js');

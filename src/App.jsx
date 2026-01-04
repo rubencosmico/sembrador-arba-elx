@@ -13,7 +13,6 @@ import LoadingScreen from './components/LoadingScreen';
 import LoginScreen from './components/LoginScreen';
 import LandingPage from './components/LandingPage';
 import WelcomeScreen from './components/WelcomeScreen';
-import CoordinatorView from './components/CoordinatorView';
 import SowerView from './components/SowerView';
 import CampaignManager from './components/CampaignManager';
 import ClaimRecordsView from './components/ClaimRecordsView';
@@ -92,15 +91,29 @@ function App() {
         try {
             const permission = await Notification.requestPermission();
             if (permission === 'granted') {
+                // Explicitly register service worker for more robustness
+                const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+                console.log("[NOTIFICATIONS] Service Worker registered:", registration);
+
                 const token = await getToken(messaging, {
-                    vapidKey: import.meta.env.VITE_VAPID_KEY
+                    vapidKey: import.meta.env.VITE_VAPID_KEY,
+                    serviceWorkerRegistration: registration
                 });
+
                 if (token) {
                     await updateDoc(doc(db, 'users', userId), { fcmToken: token });
+                    console.log("[NOTIFICATIONS] Token saved:", token);
+                } else {
+                    console.warn("[NOTIFICATIONS] No token received");
                 }
+            } else {
+                console.warn("[NOTIFICATIONS] Permission denied:", permission);
             }
         } catch (err) {
             console.error("Error gestionando notificaciones:", err);
+            if (err.name === 'AbortError') {
+                console.error("[NOTIFICATIONS] Push registration aborted. This often happens due to an ad-blocker or lack of browser support for the push service.");
+            }
         }
 
         onMessage(messaging, (payload) => {
@@ -230,7 +243,7 @@ function App() {
     if (currentView === 'profile' && user) {
         return (
             <ProfileView
-                db={db} user={user} userProfile={userProfile}
+                db={db} user={user} userProfile={userProfile} storage={storage}
                 onBack={() => setCurrentView('home')}
                 onUpdateProfile={(p) => setUserProfile(p)}
             />
@@ -266,15 +279,11 @@ function App() {
     // 3. Views
     if (role === 'coordinator') {
         return (
-            <CoordinatorView
-                db={db} appId={appId} campaignId={campaign.id}
-                seeds={seeds} groups={groups} logs={logs}
-                storage={storage}
-                onResetRole={() => setRole(null)}
-                isReadOnly={isReadOnly}
-                isOnline={isOnline}
-                pendingCount={pendingCount}
-                saveToQueue={saveToQueue}
+            <CampaignManager
+                db={db} appId={appId} user={user}
+                isSuperAdmin={isSuperAdmin}
+                initialCampaignId={campaign.id}
+                onBack={() => setRole(null)}
             />
         );
     }
