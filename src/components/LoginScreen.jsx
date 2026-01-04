@@ -3,26 +3,54 @@ import {
     auth,
     GoogleAuthProvider,
     EmailAuthProvider,
-    signInWithPopup
+    signInWithPopup,
+    fetchSignInMethodsForEmail,
+    sendPasswordResetEmail,
+    sendEmailVerification,
+    linkWithCredential
 } from '../firebase';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import {
+    signInWithEmailAndPassword,
+    createUserWithEmailAndPassword,
+    GoogleAuthProvider as GoogleAuth
+} from 'firebase/auth';
 
 const LoginScreen = ({ onLoginSuccess }) => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [isRegistering, setIsRegistering] = useState(false);
+    const [isForgotPassword, setIsForgotPassword] = useState(false);
     const [error, setError] = useState('');
+    const [message, setMessage] = useState('');
     const [loading, setLoading] = useState(false);
+    const [linkAccountMode, setLinkAccountMode] = useState(null); // 'google-to-email' | 'email-to-google'
 
     const handleGoogleLogin = async () => {
         setLoading(true);
         setError('');
+        setMessage('');
         const provider = new GoogleAuthProvider();
         try {
+            // First check if email exists with another method
+            // Note: Firebase signInWithPopup handles many things, but for scenario 4/6:
             const result = await signInWithPopup(auth, provider);
+            const userEmail = result.user.email;
+
+            // If we successfully login but we want to check if they should link
+            // Actually Firebase often throws an error if already linkable, 
+            // but if they just logged in, we check if they have other methods.
+            const methods = await fetchSignInMethodsForEmail(auth, userEmail);
+            if (methods.includes('password') && methods.length > 1) {
+                // Already has password, successful login with Google is fine.
+            }
+
             onLoginSuccess(result.user);
         } catch (err) {
-            setError('Error al iniciar sesión con Google.');
+            if (err.code === 'auth/account-exists-with-different-credential') {
+                setError('Ya existe una cuenta con este correo usando otro método. Inicia sesión con tu correo para vincular esta cuenta de Google.');
+            } else {
+                setError('Error al iniciar sesión con Google.');
+            }
             console.error(err);
         } finally {
             setLoading(false);
@@ -33,21 +61,96 @@ const LoginScreen = ({ onLoginSuccess }) => {
         e.preventDefault();
         setLoading(true);
         setError('');
+        setMessage('');
         try {
             if (isRegistering) {
+                // Check if already exists with Google (Scenario 3)
+                const methods = await fetchSignInMethodsForEmail(auth, email);
+                if (methods.includes('google.com')) {
+                    setError('Ya existe una cuenta con Google para este correo. Por favor, inicia sesión con Google.');
+                    setLoading(false);
+                    return;
+                }
+
                 const result = await createUserWithEmailAndPassword(auth, email, password);
-                onLoginSuccess(result.user);
+                await sendEmailVerification(result.user);
+                setMessage('Cuenta creada. Por favor, revisa tu correo para verificar tu cuenta antes de entrar.');
+                // We don't call onLoginSuccess yet because they need to verify
+                setIsRegistering(false);
             } else {
-                const result = await signInWithEmailAndPassword(auth, email, password);
-                onLoginSuccess(result.user);
+                try {
+                    const result = await signInWithEmailAndPassword(auth, email, password);
+                    if (!result.user.emailVerified) {
+                        setError('Por favor, verifica tu correo electrónico antes de continuar.');
+                        await auth.signOut();
+                        setLoading(false);
+                        return;
+                    }
+                    onLoginSuccess(result.user);
+                } catch (err) {
+                    if (err.code === 'auth/user-not-found') {
+                        setError('La cuenta no existe. Por favor, regístrate.');
+                        setIsRegistering(true); // Scenario 1
+                    } else if (err.code === 'auth/wrong-password') {
+                        setError('Contraseña incorrecta.');
+                    } else {
+                        // Check if only has Google (Scenario 5)
+                        const methods = await fetchSignInMethodsForEmail(auth, email);
+                        if (methods.length > 0 && !methods.includes('password')) {
+                            setError('Esta cuenta usa Google. Inicia sesión con Google primero y luego podrás establecer una contraseña desde tu perfil.');
+                        } else {
+                            setError('Error al iniciar sesión.');
+                        }
+                    }
+                }
             }
         } catch (err) {
-            setError(isRegistering ? 'Error al crear la cuenta.' : 'Credenciales incorrectas.');
+            setError('Error en la autenticación.');
             console.error(err);
         } finally {
             setLoading(false);
         }
     };
+
+    const handlePasswordReset = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        setError('');
+        setMessage('');
+        try {
+            await sendPasswordResetEmail(auth, email);
+            setMessage('Se ha enviado un correo para restablecer tu contraseña.');
+            setIsForgotPassword(false);
+        } catch (err) {
+            setError('Error al enviar el correo de recuperación.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (isForgotPassword) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-slate-900 p-4">
+                <div className="max-w-md w-full bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 rounded-3xl p-8 shadow-2xl">
+                    <h2 className="text-2xl font-bold text-white mb-6 text-center">Recuperar Contraseña</h2>
+                    <form onSubmit={handlePasswordReset} className="space-y-4">
+                        <input
+                            type="email"
+                            placeholder="Tu email"
+                            className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            required
+                        />
+                        <button type="submit" disabled={loading} className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 rounded-xl">
+                            {loading ? 'Enviando...' : 'Enviar Email de Recuperación'}
+                        </button>
+                    </form>
+                    <button onClick={() => setIsForgotPassword(false)} className="mt-4 w-full text-slate-400 hover:text-white transition-colors">Volver</button>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-slate-900 p-4 transition-all duration-500">
@@ -63,8 +166,13 @@ const LoginScreen = ({ onLoginSuccess }) => {
                 </div>
 
                 {error && (
-                    <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-sm animate-pulse">
+                    <div className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-sm">
                         {error}
+                    </div>
+                )}
+                {message && (
+                    <div className="mb-6 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-sm">
+                        {message}
                     </div>
                 )}
 
@@ -90,6 +198,14 @@ const LoginScreen = ({ onLoginSuccess }) => {
                         />
                     </div>
 
+                    <div className="text-right">
+                        {!isRegistering && (
+                            <button type="button" onClick={() => setIsForgotPassword(true)} className="text-sm text-slate-400 hover:text-emerald-500 transition-colors">
+                                ¿Olvidaste tu contraseña?
+                            </button>
+                        )}
+                    </div>
+
                     <button
                         type="submit"
                         disabled={loading}
@@ -104,7 +220,7 @@ const LoginScreen = ({ onLoginSuccess }) => {
                         <div className="w-full border-t border-slate-700"></div>
                     </div>
                     <div className="relative flex justify-center text-sm">
-                        <span className="px-2 bg-slate-800 text-slate-500">O continua con</span>
+                        <span className="px-2 bg-[#1a2233] text-slate-500">O continua con</span>
                     </div>
                 </div>
 

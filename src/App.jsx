@@ -51,6 +51,13 @@ function App() {
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (u) => {
             if (u) {
+                // Scenario 8: Email Verification Gate
+                if (!u.emailVerified && u.providerData.some(p => p.providerId === 'password')) {
+                    setUser(u);
+                    setLoading(false);
+                    return;
+                }
+
                 setUser(u);
 
                 // Fetch/Create Profile
@@ -93,6 +100,29 @@ function App() {
             if (permission === 'granted') {
                 // Explicitly register service worker for more robustness
                 const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+
+                // Send config to SW (Scenario: Security fix to avoid hardcoded keys)
+                const sendConfig = () => {
+                    const configStr = import.meta.env.VITE_FIREBASE_CONFIG;
+                    if (configStr && registration.active) {
+                        registration.active.postMessage({
+                            type: 'SET_FIREBASE_CONFIG',
+                            config: JSON.parse(configStr)
+                        });
+                    }
+                };
+
+                if (registration.active) {
+                    sendConfig();
+                } else {
+                    registration.addEventListener('updatefound', () => {
+                        const installingWorker = registration.installing;
+                        installingWorker.onstatechange = () => {
+                            if (installingWorker.state === 'activated') sendConfig();
+                        };
+                    });
+                }
+
                 console.log("[NOTIFICATIONS] Service Worker registered:", registration);
 
                 const token = await getToken(messaging, {
@@ -190,6 +220,37 @@ function App() {
     }, [campaign]); // Removed 'role' dependency as data depends on campaign, not role.
 
     if (loading) return <LoadingScreen />;
+
+    // 0. Verification Gate
+    if (user && !user.emailVerified && user.providerData.some(p => p.providerId === 'password')) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-slate-900 p-4">
+                <div className="max-w-md w-full bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 rounded-3xl p-8 shadow-2xl text-center">
+                    <div className="inline-block p-4 rounded-2xl bg-amber-500/10 mb-6">
+                        <svg className="w-12 h-12 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                        </svg>
+                    </div>
+                    <h2 className="text-2xl font-bold text-white mb-4">Verifica tu email</h2>
+                    <p className="text-slate-400 mb-8">Hemos enviado un enlace de verificación a <strong>{user.email}</strong>. Por favor, revisa tu bandeja de entrada y pulsa en el enlace para activar tu cuenta.</p>
+                    <div className="space-y-4">
+                        <button
+                            onClick={() => window.location.reload()}
+                            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 rounded-xl transition-all"
+                        >
+                            Ya he verificado mi cuenta
+                        </button>
+                        <button
+                            onClick={handleLogout}
+                            className="w-full bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3 rounded-xl transition-all"
+                        >
+                            Cerrar Sesión
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     // 0. Login Override
     if (showLogin && !user) {

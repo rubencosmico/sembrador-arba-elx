@@ -1,6 +1,18 @@
 import { initializeApp } from 'firebase/app';
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
-import { getAuth, GoogleAuthProvider, EmailAuthProvider, onAuthStateChanged, signOut, signInWithPopup } from 'firebase/auth';
+import {
+    getAuth,
+    GoogleAuthProvider,
+    EmailAuthProvider,
+    onAuthStateChanged,
+    signOut,
+    signInWithPopup,
+    fetchSignInMethodsForEmail,
+    sendPasswordResetEmail,
+    sendEmailVerification,
+    linkWithCredential,
+    EmailAuthCredential
+} from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 import { getMessaging } from 'firebase/messaging';
 
@@ -29,4 +41,8 @@ const auth = getAuth(app);
 const storage = getStorage(app);
 const messaging = typeof window !== 'undefined' ? getMessaging(app) : null;
 
-export { db, auth, storage, messaging, appId, GoogleAuthProvider, EmailAuthProvider, onAuthStateChanged, signOut, signInWithPopup };
+export {
+    db, auth, storage, messaging, appId,
+    GoogleAuthProvider, EmailAuthProvider, onAuthStateChanged, signOut, signInWithPopup,
+    fetchSignInMethodsForEmail, sendPasswordResetEmail, sendEmailVerification, linkWithCredential
+};

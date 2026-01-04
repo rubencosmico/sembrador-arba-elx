@@ -4,25 +4,23 @@
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js');
 
-const firebaseConfig = {
-    apiKey: "AIzaSyCwQlpVTERw_zA_ZWmHCrOlQZf9ikf3ksc",
-    authDomain: "arba-elx-siembra.firebaseapp.com",
-    projectId: "arba-elx-siembra",
-    storageBucket: "arba-elx-siembra.firebasestorage.app",
-    messagingSenderId: "655439706240",
-    appId: "1:655439706240:web:e5918953ae64263e44ce65"
-};
+// Firebase configuration will be provided via postMessage during initialization
+self.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'SET_FIREBASE_CONFIG') {
+        const firebaseConfig = event.data.config;
+        firebase.initializeApp(firebaseConfig);
+        const messaging = firebase.messaging();
 
-firebase.initializeApp(firebaseConfig);
-const messaging = firebase.messaging();
+        messaging.onBackgroundMessage((payload) => {
+            console.log('[firebase-messaging-sw.js] Received background message ', payload);
+            const notificationTitle = payload.notification.title;
+            const notificationOptions = {
+                body: payload.notification.body,
+                icon: '/logo192.png'
+            };
+            self.registration.showNotification(notificationTitle, notificationOptions);
+        });
 
-messaging.onBackgroundMessage((payload) => {
-    console.log('[firebase-messaging-sw.js] Received background message ', payload);
-    const notificationTitle = payload.notification.title;
-    const notificationOptions = {
-        body: payload.notification.body,
-        icon: '/logo192.png'
-    };
-
-    self.registration.showNotification(notificationTitle, notificationOptions);
+        console.log('[firebase-messaging-sw.js] Firebase Messaging initialized dynamically');
+    }
 });
