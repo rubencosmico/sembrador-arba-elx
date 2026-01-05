@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, doc, getDoc, updateDoc, writeBatch } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, getDoc, getDocs, updateDoc, writeBatch, arrayUnion } from 'firebase/firestore';
 
 const sendPushNotification = async (toToken, title, body) => {
     if (!toToken) return;
@@ -20,7 +20,7 @@ const SuperAdminDashboard = ({ db, appId, onBack }) => {
         return () => unsubscribe();
     }, [db]);
 
-    const handleAction = async (requestId, status, logIds, userId) => {
+    const handleAction = async (requestId, status, logIds, userId, campaignIds = []) => {
         setActioning(true);
         try {
             const batch = writeBatch(db);
@@ -28,11 +28,34 @@ const SuperAdminDashboard = ({ db, appId, onBack }) => {
             // 1. Update Request Status
             batch.update(doc(db, 'claimRequests', requestId), { status });
 
-            // 2. If approved, update owners of logs
+            // 2. If approved, update owners of logs AND add to campaign participants
             if (status === 'approved') {
                 const logsPath = ['artifacts', appId, 'public', 'data', 'logs'];
+                const campPath = ['artifacts', appId, 'public', 'data', 'campaigns'];
+
+                // Update log owners
                 logIds.forEach(logId => {
                     batch.update(doc(db, ...logsPath, logId), { ownerId: userId });
+                });
+
+                // Get campaign IDs if not provided (fallback for old requests)
+                let finalCampaignIds = campaignIds;
+                if (!finalCampaignIds || finalCampaignIds.length === 0) {
+                    const uniqueCamps = new Set();
+                    for (const logId of logIds) {
+                        const logDoc = await getDoc(doc(db, ...logsPath, logId));
+                        if (logDoc.exists() && logDoc.data().campaignId) {
+                            uniqueCamps.add(logDoc.data().campaignId);
+                        }
+                    }
+                    finalCampaignIds = Array.from(uniqueCamps);
+                }
+
+                // Add user to campaign participants
+                finalCampaignIds.forEach(campId => {
+                    batch.update(doc(db, ...campPath, campId), {
+                        participants: arrayUnion(userId)
+                    });
                 });
             }
 
@@ -94,7 +117,7 @@ const SuperAdminDashboard = ({ db, appId, onBack }) => {
 
                                 <div className="flex space-x-3">
                                     <button
-                                        onClick={() => handleAction(req.id, 'approved', req.logIds, req.userId)}
+                                        onClick={() => handleAction(req.id, 'approved', req.logIds, req.userId, req.campaignIds)}
                                         disabled={actioning}
                                         className="flex-1 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white text-sm font-bold py-2 rounded-xl transition-all"
                                     >
@@ -112,6 +135,63 @@ const SuperAdminDashboard = ({ db, appId, onBack }) => {
                         ))}
                     </div>
                 )}
+            </div>
+
+            <div className="mb-12 border-t border-slate-800 pt-8">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest">Mantenimiento</h3>
+                    {actioning && <span className="text-[10px] text-emerald-500 animate-pulse font-bold">Procesando...</span>}
+                </div>
+                <div className="bg-slate-800/20 rounded-3xl p-6 border border-slate-800">
+                    <h4 className="font-bold mb-2">Sincronizar Comunidad</h4>
+                    <p className="text-xs text-slate-500 mb-6">Escanea reclamaciones aprobadas antiguas y asegura que los usuarios aparezcan como miembros en sus respectivas jornadas.</p>
+                    <button
+                        onClick={async () => {
+                            setActioning(true);
+                            try {
+                                const q = query(collection(db, 'claimRequests'), where('status', '==', 'approved'));
+                                const snap = await getDocs(q);
+                                const batch = writeBatch(db);
+                                const logsPath = ['artifacts', appId, 'public', 'data', 'logs'];
+                                const campPath = ['artifacts', appId, 'public', 'data', 'campaigns'];
+
+                                for (const reqDoc of snap.docs) {
+                                    const req = reqDoc.data();
+                                    const { userId, logIds, campaignIds } = req;
+
+                                    let finalCampaignIds = campaignIds || [];
+                                    if (finalCampaignIds.length === 0 && logIds?.length > 0) {
+                                        const uniqueCamps = new Set();
+                                        for (const logId of logIds) {
+                                            const lDoc = await getDoc(doc(db, ...logsPath, logId));
+                                            if (lDoc.exists() && lDoc.data().campaignId) {
+                                                uniqueCamps.add(lDoc.data().campaignId);
+                                            }
+                                        }
+                                        finalCampaignIds = Array.from(uniqueCamps);
+                                    }
+
+                                    finalCampaignIds.forEach(campId => {
+                                        batch.update(doc(db, ...campPath, campId), {
+                                            participants: arrayUnion(userId)
+                                        });
+                                    });
+                                }
+                                await batch.commit();
+                                alert('Sincronización completada con éxito.');
+                            } catch (err) {
+                                console.error(err);
+                                alert('Error durante la sincronización.');
+                            } finally {
+                                setActioning(false);
+                            }
+                        }}
+                        disabled={actioning}
+                        className="bg-white/5 hover:bg-white/10 text-white text-xs font-bold py-3 px-6 rounded-2xl border border-white/10 transition-all flex items-center gap-2"
+                    >
+                        Ejecutar Sincronización
+                    </button>
+                </div>
             </div>
         </div>
     );

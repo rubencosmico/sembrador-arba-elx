@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, getDocs, doc, setDoc, deleteDoc, onSnapshot, where } from 'firebase/firestore';
+import Breadcrumbs from './Breadcrumbs';
 
-const SocialView = ({ db, user, onBack, onChatClick }) => {
+const SocialView = ({ db, user, onBack, onChatClick, onNavigate }) => {
     const [users, setUsers] = useState([]);
     const [following, setFollowing] = useState(new Set());
     const [loading, setLoading] = useState(true);
@@ -42,12 +43,17 @@ const SocialView = ({ db, user, onBack, onChatClick }) => {
     return (
         <div className="min-h-screen bg-slate-900 text-white p-6">
             <header className="flex items-center justify-between mb-10">
-                <button onClick={onBack} className="p-2 hover:bg-slate-800 rounded-lg">
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
-                    </svg>
-                </button>
-                <h2 className="text-xl font-bold italic tracking-tighter">COMUNIDAD</h2>
+                <div className="flex items-center gap-4 text-left">
+                    <button onClick={onBack} className="p-2 hover:bg-slate-800 rounded-xl transition-colors">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+                        </svg>
+                    </button>
+                    <div className="flex flex-col">
+                        <Breadcrumbs currentView="social" onNavigate={onNavigate} />
+                        <h2 className="text-xl font-bold italic tracking-tighter uppercase">Comunidad</h2>
+                    </div>
+                </div>
                 <div className="w-10"></div>
             </header>
 
@@ -77,8 +83,8 @@ const SocialView = ({ db, user, onBack, onChatClick }) => {
                             <button
                                 onClick={() => handleFollow(u.id)}
                                 className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${following.has(u.id)
-                                        ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/30'
-                                        : 'bg-emerald-500 text-white'
+                                    ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/30'
+                                    : 'bg-emerald-500 text-white'
                                     }`}
                             >
                                 {following.has(u.id) ? 'SIGUIENDO' : 'SEGUIR'}

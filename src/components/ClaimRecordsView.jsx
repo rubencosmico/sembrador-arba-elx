@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
+import Breadcrumbs from './Breadcrumbs';
 
-const ClaimRecordsView = ({ db, appId, user, onBack }) => {
+const ClaimRecordsView = ({ db, appId, user, onBack, onNavigate }) => {
     const [orphanLogs, setOrphanLogs] = useState([]);
     const [selectedIds, setSelectedIds] = useState(new Set());
     const [loading, setLoading] = useState(true);
@@ -61,11 +62,20 @@ const ClaimRecordsView = ({ db, appId, user, onBack }) => {
         if (selectedIds.size === 0) return;
         setSubmitting(true);
         try {
+            // Find unique campaign IDs from selected logs
+            const selectedCampaignIds = Array.from(new Set(
+                orphanLogs
+                    .filter(log => selectedIds.has(log.id))
+                    .map(log => log.campaignId)
+                    .filter(id => id)
+            ));
+
             // Create a claim request for admin review
             await addDoc(collection(db, 'claimRequests'), {
                 userId: user.uid,
                 userName: user.displayName,
                 logIds: Array.from(selectedIds),
+                campaignIds: selectedCampaignIds,
                 status: 'pending',
                 createdAt: serverTimestamp()
             });
@@ -97,12 +107,17 @@ const ClaimRecordsView = ({ db, appId, user, onBack }) => {
     return (
         <div className="min-h-screen bg-slate-900 text-white p-6 pb-24">
             <header className="flex items-center justify-between mb-8">
-                <button onClick={onBack} className="p-2 hover:bg-slate-800 rounded-lg transition-colors">
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
-                    </svg>
-                </button>
-                <h2 className="text-xl font-bold">Reclamar Registros</h2>
+                <div className="flex items-center gap-4 text-left">
+                    <button onClick={onBack} className="p-2 hover:bg-slate-800 rounded-xl transition-colors">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+                        </svg>
+                    </button>
+                    <div className="flex flex-col">
+                        <Breadcrumbs currentView="claim" onNavigate={onNavigate} />
+                        <h2 className="text-xl font-bold">Reclamar Registros</h2>
+                    </div>
+                </div>
                 <div className="w-10"></div>
             </header>
 

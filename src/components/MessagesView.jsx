@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot, doc, getDoc } from 'firebase/firestore';
+import Breadcrumbs from './Breadcrumbs';
 
-const MessagesView = ({ db, user, onSelectChat, onBack }) => {
+const MessagesView = ({ db, user, onSelectChat, onBack, onNavigate }) => {
     const [conversations, setConversations] = useState([]);
     const [loading, setLoading] = useState(true);
 
@@ -40,12 +41,17 @@ const MessagesView = ({ db, user, onSelectChat, onBack }) => {
     return (
         <div className="min-h-screen bg-slate-900 text-white p-6">
             <header className="flex items-center justify-between mb-8">
-                <button onClick={onBack} className="p-2 hover:bg-slate-800 rounded-lg">
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
-                    </svg>
-                </button>
-                <h2 className="text-xl font-bold">Mensajes</h2>
+                <div className="flex items-center gap-4 text-left">
+                    <button onClick={onBack} className="p-2 hover:bg-slate-800 rounded-xl transition-colors">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+                        </svg>
+                    </button>
+                    <div className="flex flex-col">
+                        <Breadcrumbs currentView="messages" onNavigate={onNavigate} />
+                        <h2 className="text-xl font-bold">Mensajes</h2>
+                    </div>
+                </div>
                 <button className="p-2 text-emerald-500">
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />

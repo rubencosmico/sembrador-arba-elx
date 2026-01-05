@@ -2,7 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
-// [https://vitejs.dev/config/](https://vitejs.dev/config/)
+// https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
     react(),
@@ -39,5 +39,19 @@ export default defineConfig({
     setupFiles: './vitest.setup.js',
     css: true,
     exclude: ['**/node_modules/**', '**/dist/**', 'tests/e2e/**', 'tests/acceptance/**', '**/.features-gen/**'],
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('firebase')) return 'firebase';
+            if (id.includes('leaflet')) return 'leaflet';
+            return 'vendor';
+          }
+        }
+      }
+    },
+    chunkSizeWarningLimit: 1000,
   },
 })

@@ -2,8 +2,9 @@ import React, { useState, useRef } from 'react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { ArrowLeft, User, Mail, Save, Camera, Globe, Instagram, AlignLeft, Loader2 } from 'lucide-react';
+import Breadcrumbs from './Breadcrumbs';
 
-const ProfileView = ({ db, user, userProfile, storage, onBack, onUpdateProfile }) => {
+const ProfileView = ({ db, user, userProfile, storage, onBack, onUpdateProfile, onNavigate }) => {
     // ... existing states ...
     const [showPasswordModal, setShowPasswordModal] = useState(false);
     const [newPassword, setNewPassword] = useState('');
@@ -132,11 +133,14 @@ const ProfileView = ({ db, user, userProfile, storage, onBack, onUpdateProfile }
 
     return (
         <div className="min-h-screen bg-slate-900 text-white p-6 pb-24 font-sans">
-            <header className="flex items-center space-x-4 mb-8">
+            <header className="flex items-center space-x-4 mb-8 text-left">
                 <button onClick={onBack} className="p-2 bg-slate-800 rounded-xl hover:bg-slate-700 transition-colors">
                     <ArrowLeft className="w-6 h-6" />
                 </button>
-                <h2 className="text-2xl font-bold">Mi Perfil</h2>
+                <div className="flex flex-col">
+                    <Breadcrumbs currentView="profile" onNavigate={onNavigate} />
+                    <h2 className="text-2xl font-bold">Mi Perfil</h2>
+                </div>
             </header>
 
             <div className="max-w-md mx-auto animate-fade-in">
@@ -304,8 +308,8 @@ const ProfileView = ({ db, user, userProfile, storage, onBack, onUpdateProfile }
                         <button
                             onClick={() => setShowPasswordModal(true)}
                             className={`w-full text-xs font-bold py-3 rounded-lg transition-colors ${!user.providerData.some(p => p.providerId === 'password')
-                                    ? 'bg-emerald-500 text-emerald-950 hover:bg-emerald-600'
-                                    : 'text-slate-400 hover:text-white bg-slate-800'
+                                ? 'bg-emerald-500 text-emerald-950 hover:bg-emerald-600'
+                                : 'text-slate-400 hover:text-white bg-slate-800'
                                 }`}
                         >
                             {user.providerData.some(p => p.providerId === 'password') ? 'Cambiar contraseña' : 'Establecer contraseña'}

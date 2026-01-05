@@ -12,7 +12,7 @@ import { doc, getDoc, setDoc, updateDoc, arrayUnion, collection, query, where, o
 import LoadingScreen from './components/LoadingScreen';
 import LoginScreen from './components/LoginScreen';
 import LandingPage from './components/LandingPage';
-import WelcomeScreen from './components/WelcomeScreen';
+import CampaignDashboard from './components/CampaignDashboard';
 import SowerView from './components/SowerView';
 import CampaignManager from './components/CampaignManager';
 import ClaimRecordsView from './components/ClaimRecordsView';
@@ -35,6 +35,7 @@ function App() {
     const [currentView, setCurrentView] = useState('home'); // 'home' | 'claim' | 'admin' | 'messages' | 'chat' | 'social' | 'profile' | 'manage'
     const [chatPartnerId, setChatPartnerId] = useState(null);
     const [role, setRole] = useState(null); // 'coordinator' | 'sower'
+    const [sowerInitialView, setSowerInitialView] = useState('form');
     const [campaign, setCampaign] = useState(null); // { id, name, status }
     const [isManagingCampaigns, setIsManagingCampaigns] = useState(false);
 
@@ -181,6 +182,22 @@ function App() {
         setRole(null);
     };
 
+    const handleNavigate = (id) => {
+        if (id === 'home') {
+            setCampaign(null);
+            setRole(null);
+            setCurrentView('home');
+        } else if (id === 'campaign') {
+            setRole(null);
+        } else if (['profile', 'social', 'messages', 'claim', 'manage', 'admin'].includes(id)) {
+            setCurrentView(id);
+            if (id !== 'manage' || !campaign) {
+                setCampaign(null);
+                setRole(null);
+            }
+        }
+    };
+
     // Load Data - Dependent on Campaign
     useEffect(() => {
         if (!campaign) {
@@ -259,12 +276,19 @@ function App() {
 
     // 1. Campaign Manager / My Campaigns
     if (currentView === 'manage' && user) {
-        return <CampaignManager db={db} appId={appId} user={user} isSuperAdmin={isSuperAdmin} onBack={() => setCurrentView('home')} />;
+        return (
+            <CampaignManager
+                db={db} appId={appId} user={user}
+                isSuperAdmin={isSuperAdmin}
+                onBack={() => handleNavigate('home')}
+                onNavigate={handleNavigate}
+            />
+        );
     }
 
     // 2. Specialized Internal Views
     if (currentView === 'claim' && user) {
-        return <ClaimRecordsView db={db} appId={appId} user={user} onBack={() => setCurrentView('home')} />;
+        return <ClaimRecordsView db={db} appId={appId} user={user} onBack={() => handleNavigate('home')} onNavigate={handleNavigate} />;
     }
 
     if (currentView === 'admin' && isSuperAdmin) {
@@ -276,7 +300,8 @@ function App() {
             <MessagesView
                 db={db} user={user}
                 onSelectChat={(id) => { setChatPartnerId(id); setCurrentView('chat'); }}
-                onBack={() => setCurrentView('home')}
+                onBack={() => handleNavigate('home')}
+                onNavigate={handleNavigate}
             />
         );
     }
@@ -295,7 +320,8 @@ function App() {
         return (
             <SocialView
                 db={db} user={user}
-                onBack={() => setCurrentView('home')}
+                onBack={() => handleNavigate('home')}
+                onNavigate={handleNavigate}
                 onChatClick={(id) => { setChatPartnerId(id); setCurrentView('chat'); }}
             />
         );
@@ -305,7 +331,8 @@ function App() {
         return (
             <ProfileView
                 db={db} user={user} userProfile={userProfile} storage={storage}
-                onBack={() => setCurrentView('home')}
+                onBack={() => handleNavigate('home')}
+                onNavigate={handleNavigate}
                 onUpdateProfile={(p) => setUserProfile(p)}
             />
         );
@@ -330,9 +357,25 @@ function App() {
         );
     }
 
-    // 2. Select Role
+    // 2. Campaign Dashboard (replaced WelcomeScreen)
     if (!role) {
-        return <WelcomeScreen setRole={setRole} campaignName={campaign.name} onBack={() => setCampaign(null)} />;
+        return (
+            <CampaignDashboard
+                campaign={campaign}
+                user={user}
+                logs={logs}
+                isSuperAdmin={isSuperAdmin}
+                participantCount={campaign?.participants?.length || 0}
+                onSelectRole={(r, view = 'form') => {
+                    setRole(r);
+                    if (r === 'sower') setSowerInitialView(view);
+                }}
+                onBack={() => setCampaign(null)}
+                onNavigate={handleNavigate}
+                onLoginClick={() => setShowLogin(true)}
+                seeds={seeds}
+            />
+        );
     }
 
     const isReadOnly = campaign.status !== 'active';
@@ -345,6 +388,9 @@ function App() {
                 isSuperAdmin={isSuperAdmin}
                 initialCampaignId={campaign.id}
                 onBack={() => setRole(null)}
+                onNavigate={handleNavigate}
+                campaign={campaign}
+                role={role}
             />
         );
     }
@@ -360,6 +406,10 @@ function App() {
                 isOnline={isOnline}
                 pendingCount={pendingCount}
                 saveToQueue={saveToQueue}
+                initialView={sowerInitialView}
+                onNavigate={handleNavigate}
+                campaign={campaign}
+                role={role}
             />
         );
     }

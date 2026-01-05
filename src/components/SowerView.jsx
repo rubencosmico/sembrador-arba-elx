@@ -10,13 +10,19 @@ import ManualView from './ManualView';
 import SowingForm from './SowingForm';
 import { filterAndSortLogs } from '../utils/logUtils';
 import { getOfflinePhoto } from '../utils/db'; // Import DB utility
+import Breadcrumbs from './Breadcrumbs';
 
-const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onResetRole, isReadOnly, isOnline, pendingCount, saveToQueue }) => {
+const SowerView = ({
+    db, appId, campaignId, seeds, groups,
+    userId, storage, onResetRole, isReadOnly,
+    isOnline, pendingCount, saveToQueue, initialView = 'form',
+    onNavigate, campaign, role
+}) => {
     const [selectedGroupId, setSelectedGroupId] = useState(null);
     const [isUserCentric, setIsUserCentric] = useState(false);
     const [groupStats, setGroupStats] = useState({});
     const [showManual, setShowManual] = useState(false);
-    const [view, setView] = useState('form');
+    const [view, setView] = useState(initialView);
     const [editingLog, setEditingLog] = useState(null);
     // FormData, GPS, and Photo states moved to SowingForm
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -413,7 +419,8 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
                     <button onClick={() => setShowManual(true)} className="mb-1 text-emerald-950/30 hover:text-emerald-950/60 transition-colors">
                         <HelpCircle size={20} />
                     </button>
-                    <div>
+                    <div className="flex flex-col">
+                        <Breadcrumbs campaign={campaign} role={role} onNavigate={onNavigate} />
                         <div className="flex items-center gap-1.5 mb-0.5">
                             <span className={`w-2 h-2 rounded-full animate-pulse ${isReadOnly ? 'bg-red-500' : (!isOnline ? 'bg-gray-400' : 'bg-amber-500')}`}></span>
                             <span className={`text-[10px] font-bold uppercase tracking-widest ${isReadOnly ? 'text-red-900/40' : (!isOnline ? 'text-gray-500' : 'text-amber-900/40')}`}>

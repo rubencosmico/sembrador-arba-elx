@@ -14,9 +14,14 @@ import { compressImage } from '../utils/imageUtils';
 import { filterAndSortLogs } from '../utils/logUtils';
 import { generateLogCSV } from '../utils/csvUtils';
 import MapView from './MapView';
+import Breadcrumbs from './Breadcrumbs';
 
-const CampaignManager = ({ db, appId, user, isSuperAdmin, onBack, initialCampaignId }) => {
+const CampaignManager = ({
+    db, appId, user, isSuperAdmin, onBack,
+    initialCampaignId, onNavigate, campaign, role
+}) => {
     const [allCampaigns, setAllCampaigns] = useState([]);
+    const [loadingCampaigns, setLoadingCampaigns] = useState(true);
     const [editingCampaign, setEditingCampaign] = useState(null); // Simple name edit
     const [selectedCampaignId, setSelectedCampaignId] = useState(initialCampaignId || null); // Deep management
     const [newCampaignName, setNewCampaignName] = useState('');
@@ -60,6 +65,10 @@ const CampaignManager = ({ db, appId, user, isSuperAdmin, onBack, initialCampaig
 
         const unsubscribe = onSnapshot(q, (snap) => {
             setAllCampaigns(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            setLoadingCampaigns(false);
+        }, (err) => {
+            console.error("Error fetching campaigns:", err);
+            setLoadingCampaigns(false);
         });
         return () => unsubscribe();
     }, [db, appId, user.uid, isSuperAdmin]);
@@ -231,6 +240,37 @@ const CampaignManager = ({ db, appId, user, isSuperAdmin, onBack, initialCampaig
     // Deep Management View
     if (selectedCampaignId) {
         const camp = allCampaigns.find(c => c.id === selectedCampaignId);
+
+        // If not found in allCampaigns (could be loading or unauthorized)
+        if (!camp) {
+            return (
+                <div className="min-h-screen bg-slate-900 text-white flex items-center justify-center">
+                    <div className="text-center space-y-4 p-8">
+                        {loadingCampaigns ? (
+                            <>
+                                <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                                <p className="text-slate-500 font-black uppercase tracking-widest text-[10px]">Cargando configuración...</p>
+                            </>
+                        ) : (
+                            <>
+                                <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-3xl flex items-center justify-center mx-auto mb-4 border border-red-500/20">
+                                    <Lock size={32} />
+                                </div>
+                                <h3 className="text-xl font-bold">Acceso Denegado</h3>
+                                <p className="text-slate-500 text-xs max-w-xs mx-auto">No tienes permisos para gestionar esta jornada o la jornada no existe.</p>
+                                <button
+                                    onClick={() => { setSelectedCampaignId(null); onBack(); }}
+                                    className="mt-6 px-6 py-3 bg-white/5 border border-white/10 rounded-2xl text-xs font-black uppercase transition-all hover:bg-white/10"
+                                >
+                                    Volver al Dashboard
+                                </button>
+                            </>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
         return (
             <div className="min-h-screen bg-slate-900 text-white font-sans pb-24">
                 <header className="sticky top-0 z-40 bg-slate-900/80 backdrop-blur-md px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/5">
@@ -238,7 +278,12 @@ const CampaignManager = ({ db, appId, user, isSuperAdmin, onBack, initialCampaig
                         <button onClick={() => setSelectedCampaignId(null)} className="p-2 bg-white/5 rounded-xl hover:bg-white/10 transition-colors">
                             <ArrowLeft />
                         </button>
-                        <div>
+                        <div className="flex flex-col">
+                            <Breadcrumbs
+                                campaign={campaign || camp}
+                                role={role || 'coordinator'}
+                                onNavigate={onNavigate}
+                            />
                             <h2 className="text-xl font-bold truncate max-w-[200px] md:max-w-md">{camp?.name}</h2>
                             <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none mt-1">Gestión Centralizada</p>
                         </div>
@@ -693,7 +738,10 @@ const CampaignManager = ({ db, appId, user, isSuperAdmin, onBack, initialCampaig
                     <button onClick={onBack} className="p-2 bg-slate-900 rounded-xl hover:bg-slate-800 transition-colors">
                         <ArrowLeft />
                     </button>
-                    <h1 className="text-3xl font-bold tracking-tight">Mis Jornadas</h1>
+                    <div className="flex flex-col text-left">
+                        <Breadcrumbs currentView="manage" onNavigate={onNavigate} />
+                        <h1 className="text-3xl font-bold tracking-tight">Mis Jornadas</h1>
+                    </div>
                 </div>
             </header>
 
