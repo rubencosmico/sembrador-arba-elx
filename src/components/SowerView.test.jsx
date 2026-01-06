@@ -111,7 +111,7 @@ describe('SowerView Integration', () => {
     });
 
     it('displays history logs correctly', async () => {
-        // Mockear respuesta inicial de logs
+        // Mockear respuesta de getDocs para logs
         const mockLogs = [
             { id: 'log1', data: () => ({ seedName: 'Pino', microsite: 'Roca', holeCount: 3, timestamp: { seconds: 100 } }) }
         ];
@@ -130,6 +130,8 @@ describe('SowerView Integration', () => {
                 seeds={mockSeeds}
                 groups={mockGroups}
                 userId={mockUserId}
+                storage={{}}
+                onNavigate={vi.fn()}
             />
         );
 
@@ -137,11 +139,6 @@ describe('SowerView Integration', () => {
         fireEvent.click(screen.getByText('Equipo Alpha'));
 
         // Cambiar a pestaña Historial (Cuaderno)
-        // Buscamos el botón por el icono o texto. En el código actual son botones con iconos.
-        // El botón de historial tiene el texto 'Cuaderno' oculto en desktop o visible. 
-        // Buscamos por el rol button que contenga el texto si es visible, o por test-id si lo hubiéramos puesto.
-        // En SowerView línea 654 aprox: tiene <span>Cuaderno</span>
-
         const historyTabBtn = screen.getByText('Cuaderno');
         fireEvent.click(historyTabBtn);
 
@@ -150,6 +147,7 @@ describe('SowerView Integration', () => {
             expect(screen.getByText('Pino')).toBeInTheDocument();
             expect(screen.getByText('Roca')).toBeInTheDocument();
         });
+
         // Comprobar que existe algún elemento con '3' (cantidad de golpes)
         expect(screen.getAllByText('3').length).toBeGreaterThan(0);
     });

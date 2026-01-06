@@ -43,6 +43,8 @@ function App() {
     const [seeds, setSeeds] = useState([]);
     const [groups, setGroups] = useState([]);
     const [logs, setLogs] = useState([]);
+    const [campaignParticipants, setCampaignParticipants] = useState([]);
+    const [userFollowing, setUserFollowing] = useState(new Set());
     const [loading, setLoading] = useState(true);
 
     // Offline Queue
@@ -96,7 +98,15 @@ function App() {
 
     const handleNotifications = async (userId) => {
         if (!messaging) return;
+
         try {
+            // Check if messaging is supported in this browser
+            const { isSupported } = await import('firebase/messaging');
+            if (!(await isSupported())) {
+                console.warn("[NOTIFICATIONS] Messaging not supported in this browser");
+                return;
+            }
+
             const permission = await Notification.requestPermission();
             if (permission === 'granted') {
                 // Explicitly register service worker for more robustness
@@ -141,9 +151,10 @@ function App() {
                 console.warn("[NOTIFICATIONS] Permission denied:", permission);
             }
         } catch (err) {
-            console.error("Error gestionando notificaciones:", err);
             if (err.name === 'AbortError') {
-                console.error("[NOTIFICATIONS] Push registration aborted. This often happens due to an ad-blocker or lack of browser support for the push service.");
+                console.warn("[NOTIFICATIONS] Push registration aborted. This often happens due to an ad-blocker or lack of browser support for the push service.");
+            } else {
+                console.error("Error gestionando notificaciones:", err);
             }
         }
 
@@ -235,6 +246,61 @@ function App() {
             unsubLogs();
         };
     }, [campaign]); // Removed 'role' dependency as data depends on campaign, not role.
+
+    // Fetch participant profiles when campaign changes
+    useEffect(() => {
+        if (!campaign || !campaign.participants || campaign.participants.length === 0) {
+            setCampaignParticipants([]);
+            return;
+        }
+
+        const fetchParticipants = async () => {
+            const profiles = [];
+            // Use batching if there are many, but for now loop is fine for common cases
+            for (const uid of campaign.participants) {
+                const uDoc = await getDoc(doc(db, 'users', uid));
+                if (uDoc.exists()) {
+                    profiles.push({ uid, ...uDoc.data() });
+                }
+            }
+            setCampaignParticipants(profiles);
+        };
+
+        fetchParticipants();
+    }, [campaign, db]);
+
+    // Social Logic: Follows
+    useEffect(() => {
+        if (!user) {
+            setUserFollowing(new Set());
+            return;
+        }
+
+        const q = query(collection(db, 'follows'), where('followerId', '==', user.uid));
+        const unsubscribe = onSnapshot(q, (snap) => {
+            setUserFollowing(new Set(snap.docs.map(d => d.data().followingId)));
+        });
+
+        return () => unsubscribe();
+    }, [db, user?.uid]);
+
+    const handleSocialAction = async (action, targetId) => {
+        if (!user) return;
+        if (action === 'follow') {
+            const followId = `${user.uid}_${targetId}`;
+            const followRef = doc(db, 'follows', followId);
+
+            if (userFollowing.has(targetId)) {
+                await deleteDoc(doc(db, 'follows', followId));
+            } else {
+                await setDoc(followRef, {
+                    followerId: user.uid,
+                    followingId: targetId,
+                    createdAt: new Date()
+                });
+            }
+        }
+    };
 
     if (loading) return <LoadingScreen />;
 
@@ -366,6 +432,9 @@ function App() {
                 logs={logs}
                 isSuperAdmin={isSuperAdmin}
                 participantCount={campaign?.participants?.length || 0}
+                participants={campaignParticipants}
+                userFollowing={userFollowing}
+                onSocialAction={handleSocialAction}
                 onSelectRole={(r, view = 'form') => {
                     setRole(r);
                     if (r === 'sower') setSowerInitialView(view);
@@ -374,6 +443,7 @@ function App() {
                 onNavigate={handleNavigate}
                 onLoginClick={() => setShowLogin(true)}
                 seeds={seeds}
+                groups={groups}
             />
         );
     }
@@ -399,7 +469,7 @@ function App() {
         return (
             <SowerView
                 db={db} appId={appId} campaignId={campaign.id}
-                seeds={seeds} groups={groups} userId={user?.uid}
+                seeds={seeds} groups={groups} userId={user?.uid} userProfile={userProfile}
                 storage={storage}
                 onResetRole={() => setRole(null)}
                 isReadOnly={isReadOnly}

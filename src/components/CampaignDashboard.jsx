@@ -11,13 +11,76 @@ const CampaignDashboard = ({
     campaign, user, logs, seeds = [],
     onSelectRole, onBack, onLoginClick,
     isSuperAdmin, participantCount = 0,
-    onNavigate
+    onNavigate, participants = [],
+    userFollowing = new Set(),
+    onSocialAction, groups = []
 }) => {
     const [viewMode, setViewMode] = useState('map'); // 'map' | 'list'
     const [selectedLog, setSelectedLog] = useState(null);
     const [expandedSpecies, setExpandedSpecies] = useState(null);
+    const [showFilters, setShowFilters] = useState(false);
+    const [showCommunityModal, setShowCommunityModal] = useState(false);
+    const [filters, setFilters] = useState({
+        seedId: '',
+        groupName: '',
+        microsite: '',
+        orientation: '',
+        withSubstrate: null, // null | true | false
+        withProtector: null
+    });
 
-    const totalHoles = logs.reduce((acc, log) => acc + (parseInt(log.holeCount) || 1), 0);
+    const totalHolesTotal = logs.reduce((acc, log) => acc + (parseInt(log.holeCount) || 1), 0);
+
+    // Apply cumulative filtering
+    const filteredLogs = React.useMemo(() => {
+        return logs.filter(log => {
+            if (filters.seedId && log.seedId !== filters.seedId) return false;
+            if (filters.groupName && log.groupName !== filters.groupName) return false;
+            if (filters.microsite && log.microsite !== filters.microsite) return false;
+            if (filters.orientation && log.orientation !== filters.orientation) return false;
+            if (filters.withSubstrate !== null && !!log.withSubstrate !== filters.withSubstrate) return false;
+            if (filters.withProtector !== null && !!log.withProtector !== filters.withProtector) return false;
+            return true;
+        });
+    }, [logs, filters]);
+
+    const totalHoles = filteredLogs.reduce((acc, log) => acc + (parseInt(log.holeCount) || 1), 0);
+
+    // Unique values for filters
+    const filterOptions = React.useMemo(() => {
+        const options = {
+            seeds: [],
+            users: new Set(),
+            microsites: new Set(),
+            orientations: new Set()
+        };
+
+        logs.forEach(log => {
+            if (log.groupName) options.users.add(log.groupName);
+            if (log.microsite) options.microsites.add(log.microsite);
+            if (log.orientation) options.orientations.add(log.orientation);
+        });
+
+        // Map seeds to their names with provider and treatment
+        const seedMap = seeds.reduce((acc, s) => {
+            let label = s.species;
+            if (s.provider) label += ` - ${s.provider}`;
+            if (s.treatment) label += ` (${s.treatment})`;
+            acc[s.id] = label;
+            return acc;
+        }, {});
+
+        options.seeds = Array.from(new Set(logs.map(l => l.seedId)))
+            .filter(Boolean)
+            .map(id => ({ id, name: seedMap[id] || 'Especie desconocida' }));
+
+        return {
+            seeds: options.seeds,
+            users: Array.from(options.users).sort(),
+            microsites: Array.from(options.microsites).sort(),
+            orientations: Array.from(options.orientations).sort()
+        };
+    }, [logs, seeds]);
 
     // Group seeds by species
     const groupedSeeds = seeds.reduce((acc, seed) => {
@@ -34,6 +97,29 @@ const CampaignDashboard = ({
         const d = date.seconds ? new Date(date.seconds * 1000) : new Date(date);
         return d.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
     };
+
+    const toggleBooleanFilter = (key) => {
+        setFilters(prev => ({
+            ...prev,
+            [key]: prev[key] === null ? true : prev[key] === true ? false : null
+        }));
+    };
+
+    const isModern = React.useMemo(() => groups.length === 0 || seeds.some(s => s.userAssignments?.length > 0), [groups, seeds]);
+
+    const hasPersonalSeeds = React.useMemo(() => {
+        if (!user) return true; // Let them try to login
+        if (isModern) {
+            return seeds.some(s => s.userAssignments?.some(a => a.userId === user.uid));
+        }
+        // Legacy: if any group has seeds, we allow entering SowerView to pick a group
+        return groups.some(g => g.assignedSeeds?.length > 0);
+    }, [isModern, seeds, groups, user]);
+
+    const hasPersonalLogs = React.useMemo(() => {
+        if (!user) return false;
+        return logs.some(l => l.userId === user.uid);
+    }, [logs, user]);
 
     return (
         <div className="min-h-screen bg-slate-950 text-white font-sans pb-12 overflow-x-hidden">
@@ -81,19 +167,40 @@ const CampaignDashboard = ({
                         </div>
                         <div>
                             <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1">Reforestación</p>
-                            <div className="text-4xl font-black">{totalHoles} <span className="text-sm font-bold text-emerald-500">golpes</span></div>
+                            <div className="text-4xl font-black">{totalHolesTotal} <span className="text-sm font-bold text-emerald-500">golpes</span></div>
                         </div>
                     </div>
 
-                    <div className="bg-white/5 border border-white/10 rounded-[2.5rem] p-8 flex items-center gap-6 shadow-xl">
-                        <div className="bg-teal-500 p-4 rounded-3xl shadow-lg shadow-teal-500/20">
+                    <button
+                        onClick={() => setShowCommunityModal(true)}
+                        className="bg-white/5 border border-white/10 rounded-[2.5rem] p-8 flex items-center gap-6 shadow-xl relative overflow-hidden group hover:bg-white/10 transition-all cursor-pointer text-left"
+                    >
+                        <div className="bg-teal-500 p-4 rounded-3xl shadow-lg shadow-teal-500/20 z-10">
                             <Users size={32} className="text-slate-950" />
                         </div>
-                        <div>
+                        <div className="z-10">
                             <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1">Comunidad</p>
                             <div className="text-4xl font-black">{participantCount} <span className="text-sm font-bold text-teal-500">miembros</span></div>
                         </div>
-                    </div>
+
+                        {/* Member Avatars Overlap */}
+                        <div className="absolute right-8 flex -space-x-3 opacity-20 group-hover:opacity-100 transition-opacity">
+                            {participants.slice(0, 5).map((p, i) => (
+                                <div key={p.uid || i} className="w-10 h-10 rounded-full border-2 border-slate-950 bg-slate-800 flex items-center justify-center overflow-hidden">
+                                    {p.photoURL ? (
+                                        <img src={p.photoURL} alt={p.displayName} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <span className="text-[10px] font-black">{p.displayName?.charAt(0)}</span>
+                                    )}
+                                </div>
+                            ))}
+                            {participants.length > 5 && (
+                                <div className="w-10 h-10 rounded-full border-2 border-slate-950 bg-slate-800 flex items-center justify-center text-[10px] font-black text-slate-400">
+                                    +{participants.length - 5}
+                                </div>
+                            )}
+                        </div>
+                    </button>
 
                     <div className="bg-white/5 border border-white/10 rounded-[2.5rem] p-8 flex items-center gap-6 shadow-xl text-slate-400">
                         <div className="bg-slate-800 p-4 rounded-3xl">
@@ -181,8 +288,8 @@ const CampaignDashboard = ({
 
                 {/* Main Interactive Map / List Toggle */}
                 <section className="space-y-4">
-                    <div className="flex items-center justify-between px-2">
-                        <div className="flex items-center gap-4">
+                    <div className="flex items-center justify-between px-2 gap-4 flex-wrap">
+                        <div className="flex items-center gap-4 flex-wrap">
                             <h3 className="text-lg font-bold flex items-center gap-2">
                                 {viewMode === 'map' ? <MapPin className="text-emerald-500" /> : <List className="text-emerald-500" />}
                                 {viewMode === 'map' ? 'Mapa de Plantaciones' : 'Lista de Registros'}
@@ -202,25 +309,112 @@ const CampaignDashboard = ({
                                 </button>
                             </div>
                         </div>
-                        <p className="hidden md:block text-xs text-slate-500 font-medium italic">Mostrando {logs.length} registros en tiempo real</p>
+
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={() => setShowFilters(!showFilters)}
+                                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${showFilters || Object.values(filters).some(v => v !== '' && v !== null) ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-500' : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'}`}
+                            >
+                                <Settings size={14} />
+                                <span>Filtros Avanzados</span>
+                                {Object.values(filters).some(v => v !== '' && v !== null) && (
+                                    <span className="flex w-2 h-2 rounded-full bg-emerald-500"></span>
+                                )}
+                            </button>
+                            <p className="hidden md:block text-xs text-slate-500 font-medium italic">Mostrando {filteredLogs.length} registros</p>
+                        </div>
                     </div>
+
+                    {/* Filter Panel */}
+                    {showFilters && (
+                        <div className="bg-slate-900 border border-white/10 rounded-[2rem] p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 animate-fade-in">
+                            <div className="space-y-2">
+                                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Variedad de Semilla</label>
+                                <select
+                                    value={filters.seedId}
+                                    onChange={e => setFilters(prev => ({ ...prev, seedId: e.target.value }))}
+                                    className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-xs font-bold focus:ring-2 focus:ring-emerald-500/50 outline-none"
+                                >
+                                    <option value="">Todas las especies</option>
+                                    {filterOptions.seeds.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                </select>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Sembrador</label>
+                                <select
+                                    value={filters.groupName}
+                                    onChange={e => setFilters(prev => ({ ...prev, groupName: e.target.value }))}
+                                    className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-xs font-bold focus:ring-2 focus:ring-emerald-500/50 outline-none"
+                                >
+                                    <option value="">Todos los usuarios</option>
+                                    {filterOptions.users.map(u => <option key={u} value={u}>{u}</option>)}
+                                </select>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Tipo de Nodriza</label>
+                                <select
+                                    value={filters.microsite}
+                                    onChange={e => setFilters(prev => ({ ...prev, microsite: e.target.value }))}
+                                    className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-xs font-bold focus:ring-2 focus:ring-emerald-500/50 outline-none"
+                                >
+                                    <option value="">Cualquier micrositio</option>
+                                    {filterOptions.microsites.map(m => <option key={m} value={m}>{m}</option>)}
+                                </select>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Orientación</label>
+                                <select
+                                    value={filters.orientation}
+                                    onChange={e => setFilters(prev => ({ ...prev, orientation: e.target.value }))}
+                                    className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-xs font-bold focus:ring-2 focus:ring-emerald-500/50 outline-none"
+                                >
+                                    <option value="">Todas las orientaciones</option>
+                                    {filterOptions.orientations.map(o => <option key={o} value={o}>{o}</option>)}
+                                </select>
+                            </div>
+
+                            <div className="flex gap-4 col-span-full pt-2 border-t border-white/5">
+                                <button
+                                    onClick={() => toggleBooleanFilter('withSubstrate')}
+                                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${filters.withSubstrate === null ? 'bg-white/5 border-white/10 text-slate-500' : filters.withSubstrate ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-500' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}
+                                >
+                                    Sustrato: {filters.withSubstrate === null ? 'INDIFERENTE' : filters.withSubstrate ? 'SI' : 'NO'}
+                                </button>
+                                <button
+                                    onClick={() => toggleBooleanFilter('withProtector')}
+                                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${filters.withProtector === null ? 'bg-white/5 border-white/10 text-slate-500' : filters.withProtector ? 'bg-amber-500/20 border-amber-500/50 text-amber-500' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}
+                                >
+                                    Protector: {filters.withProtector === null ? 'INDIFERENTE' : filters.withProtector ? 'SI' : 'NO'}
+                                </button>
+                                <button
+                                    onClick={() => setFilters({ seedId: '', groupName: '', microsite: '', orientation: '', withSubstrate: null, withProtector: null })}
+                                    className="ml-auto px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest text-red-500 hover:bg-red-500/10 transition-colors"
+                                >
+                                    Limpiar Filtros
+                                </button>
+                            </div>
+                        </div>
+                    )}
 
                     {viewMode === 'map' ? (
                         <div className="animate-fade-in relative">
-                            <MapView logs={logs} onSelect={(log) => setSelectedLog(log)} />
+                            <MapView logs={filteredLogs} onSelect={(log) => setSelectedLog(log)} />
                         </div>
                     ) : (
                         <div className="animate-fade-in">
-                            {logs.length === 0 ? (
+                            {filteredLogs.length === 0 ? (
                                 <div className="py-20 text-center bg-white/5 rounded-[2rem] border border-dashed border-white/10 flex flex-col items-center justify-center gap-4">
                                     <div className="p-4 bg-white/5 rounded-2xl text-slate-700">
                                         <Leaf size={32} />
                                     </div>
-                                    <p className="text-slate-500 font-black uppercase tracking-widest text-[10px]">No hay registros todavía</p>
+                                    <p className="text-slate-500 font-black uppercase tracking-widest text-[10px]">No hay registros que coincidan con los filtros</p>
                                 </div>
                             ) : (
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    {logs.map(log => (
+                                    {filteredLogs.map(log => (
                                         <div
                                             key={log.id}
                                             onClick={() => setSelectedLog(log)}
@@ -234,7 +428,7 @@ const CampaignDashboard = ({
                                                 </div>
                                                 <div className="text-left">
                                                     <h4 className="font-bold text-slate-200 group-hover:text-white transition-colors uppercase text-sm">{log.seedName}</h4>
-                                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{log.groupName} • {log.holeCount || 1} golpes</p>
+                                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{participants.find(p => p.uid === log.userId)?.displayName || log.userName || log.groupName} • {log.holeCount || 1} golpes</p>
                                                 </div>
                                             </div>
                                             <ChevronRight className="text-slate-700 group-hover:text-emerald-500 transition-colors shrink-0" />
@@ -257,14 +451,25 @@ const CampaignDashboard = ({
                         {/* Primary Action: Sowing */}
                         {isActive && (
                             <button
-                                onClick={() => user ? onSelectRole('sower', 'form') : onLoginClick()}
-                                className="group relative bg-emerald-500 hover:bg-emerald-400 p-8 rounded-[2rem] text-slate-950 transition-all flex flex-col justify-between h-56 shadow-xl shadow-emerald-500/10 active:scale-[0.98]"
+                                onClick={() => {
+                                    if (user && !hasPersonalSeeds) return;
+                                    user ? onSelectRole('sower', 'form') : onLoginClick();
+                                }}
+                                disabled={user && !hasPersonalSeeds}
+                                className={`group relative p-8 rounded-[2rem] text-slate-950 transition-all flex flex-col justify-between h-56 shadow-xl active:scale-[0.98] 
+                                    ${user && !hasPersonalSeeds
+                                        ? 'bg-slate-800 opacity-40 grayscale cursor-not-allowed border border-white/5'
+                                        : 'bg-emerald-500 hover:bg-emerald-400 shadow-emerald-500/10'}`}
                             >
-                                <PlusCircle size={40} strokeWidth={2.5} />
+                                <PlusCircle size={40} strokeWidth={2.5} className={user && !hasPersonalSeeds ? 'text-slate-600' : ''} />
                                 <div className="text-left w-full">
-                                    <h4 className="text-2xl font-black uppercase leading-none mb-2">Registrar<br />Siembras</h4>
-                                    <p className="text-slate-950/60 text-xs font-bold uppercase tracking-widest flex items-center gap-2">
-                                        Empezar ahora <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
+                                    <h4 className={`text-2xl font-black uppercase leading-none mb-2 ${user && !hasPersonalSeeds ? 'text-slate-500' : ''}`}>Registrar<br />Siembras</h4>
+                                    <p className={`text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 ${user && !hasPersonalSeeds ? 'text-slate-600' : 'text-slate-950/60'}`}>
+                                        {user && !hasPersonalSeeds ? (
+                                            <>Sin semillas asignadas <Info size={14} /></>
+                                        ) : (
+                                            <>Empezar ahora <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" /></>
+                                        )}
                                     </p>
                                 </div>
                             </button>
@@ -273,14 +478,25 @@ const CampaignDashboard = ({
                         {/* History Shortcut */}
                         {user && (
                             <button
-                                onClick={() => onSelectRole('sower', 'history')}
-                                className="group bg-slate-800/50 hover:bg-slate-800 p-8 rounded-[2rem] border border-white/5 hover:border-emerald-500/30 transition-all flex flex-col justify-between h-56 active:scale-[0.98]"
+                                onClick={() => {
+                                    if (!hasPersonalLogs) return;
+                                    onSelectRole('sower', 'history');
+                                }}
+                                disabled={!hasPersonalLogs}
+                                className={`group p-8 rounded-[2rem] border transition-all flex flex-col justify-between h-56 active:scale-[0.98] 
+                                    ${!hasPersonalLogs
+                                        ? 'bg-slate-900 border-white/5 opacity-40 grayscale cursor-not-allowed'
+                                        : 'bg-slate-800/50 hover:bg-slate-800 border-white/5 hover:border-emerald-500/30'}`}
                             >
-                                <History size={40} className="text-emerald-500" />
+                                <History size={40} className={!hasPersonalLogs ? 'text-slate-600' : 'text-emerald-500'} />
                                 <div className="text-left w-full">
-                                    <h4 className="text-2xl font-black uppercase leading-none mb-2 text-white">Mi Cuaderno<br />de Campo</h4>
-                                    <p className="text-slate-500 text-xs font-bold uppercase tracking-widest flex items-center gap-2 group-hover:text-emerald-400 transition-colors">
-                                        Ver mis registros <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
+                                    <h4 className={`text-2xl font-black uppercase leading-none mb-2 ${!hasPersonalLogs ? 'text-slate-500' : 'text-white'}`}>Mi Cuaderno<br />de Campo</h4>
+                                    <p className={`text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors ${!hasPersonalLogs ? 'text-slate-600' : 'text-slate-500 group-hover:text-emerald-400'}`}>
+                                        {!hasPersonalLogs ? (
+                                            <>Sin registros previos <Info size={14} /></>
+                                        ) : (
+                                            <>Ver mis registros <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" /></>
+                                        )}
                                     </p>
                                 </div>
                             </button>
@@ -374,7 +590,7 @@ const CampaignDashboard = ({
                                     <div className="grid grid-cols-2 gap-6">
                                         <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
                                             <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Sembrador</p>
-                                            <p className="text-sm font-bold text-white">{selectedLog.groupName || 'Anónimo'}</p>
+                                            <p className="text-sm font-bold text-white">{participants.find(p => p.uid === selectedLog.userId)?.displayName || selectedLog.userName || selectedLog.groupName || 'Anónimo'}</p>
                                         </div>
                                         <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
                                             <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Impacto</p>
@@ -437,6 +653,76 @@ const CampaignDashboard = ({
                     </div>
                 )
             }
+
+            {/* Community Modal */}
+            {showCommunityModal && (
+                <div
+                    className="fixed inset-0 z-[110] bg-slate-950/90 backdrop-blur-xl flex items-center justify-center p-4 md:p-10 animate-fade-in"
+                    onClick={() => setShowCommunityModal(false)}
+                >
+                    <div
+                        className="bg-slate-900 border border-white/10 rounded-[3rem] w-full max-w-2xl max-h-[80vh] overflow-y-auto no-scrollbar shadow-2xl relative p-8 md:p-12"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <button
+                            onClick={() => setShowCommunityModal(false)}
+                            className="absolute top-6 right-6 p-3 bg-white/5 hover:bg-white/10 rounded-2xl text-white transition-colors z-10"
+                        >
+                            <X size={24} />
+                        </button>
+
+                        <div className="space-y-8">
+                            <div className="text-center md:text-left">
+                                <div className="inline-block px-3 py-1 bg-teal-500/10 border border-teal-500/20 rounded-full text-[10px] font-black text-teal-500 uppercase tracking-widest mb-4">
+                                    Participantes de la Jornada
+                                </div>
+                                <h3 className="text-4xl font-black uppercase text-white leading-none">Comunidad</h3>
+                                <p className="text-slate-400 mt-2 font-medium italic">
+                                    Conoce a los sembradores que están haciendo posible esta jornada.
+                                </p>
+                            </div>
+
+                            <div className="space-y-4">
+                                {participants.length === 0 ? (
+                                    <div className="text-center py-10 text-slate-500 font-bold uppercase tracking-widest text-xs">
+                                        Aún no hay participantes registrados.
+                                    </div>
+                                ) : (
+                                    participants.map(p => (
+                                        <div key={p.uid} className="bg-white/5 border border-white/5 rounded-2xl p-4 flex items-center justify-between group">
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-12 h-12 bg-slate-800 rounded-xl flex items-center justify-center overflow-hidden">
+                                                    {p.photoURL ? (
+                                                        <img src={p.photoURL} alt={p.displayName} className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        <span className="text-sm font-black text-slate-500">{p.displayName?.charAt(0)}</span>
+                                                    )}
+                                                </div>
+                                                <div className="text-left">
+                                                    <h4 className="font-bold text-slate-200 group-hover:text-white transition-colors uppercase text-sm">{p.displayName}</h4>
+                                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{p.defaultRole || 'Sembrador'}</p>
+                                                </div>
+                                            </div>
+
+                                            {user && user.uid !== p.uid && (
+                                                <button
+                                                    onClick={() => onSocialAction('follow', p.uid)}
+                                                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${userFollowing.has(p.uid)
+                                                        ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                                                        : 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20 active:scale-95'
+                                                        }`}
+                                                >
+                                                    {userFollowing.has(p.uid) ? 'SIGUIENDO' : 'SEGUIR'}
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div >
     );
 };

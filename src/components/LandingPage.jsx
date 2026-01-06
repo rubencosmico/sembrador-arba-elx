@@ -27,6 +27,7 @@ const LandingPage = ({
     const [showUserMenu, setShowUserMenu] = useState(false);
     const [approxCoords, setApproxCoords] = useState({}); // { campaignId: {lat, lng} }
     const [campaignStats, setCampaignStats] = useState({}); // { campaignId: { totalHoles: 0 } }
+    const [mapFilter, setMapFilter] = useState('all'); // 'all' | 'active' | 'finalized' | 'managed' | 'participated'
 
     useEffect(() => {
         const missing = campaigns.filter(c => !c.coordinates && !approxCoords[c.id]);
@@ -250,11 +251,32 @@ const LandingPage = ({
 
                 {/* Map Section */}
                 <div className="mb-16">
-                    <div className="flex items-center justify-between mb-6">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
                         <h3 className="text-2xl font-bold flex items-center space-x-2">
                             <span className="w-2 h-8 bg-emerald-500 rounded-full mr-1"></span>
                             <span>Explora las Jornadas</span>
                         </h3>
+
+                        <div className="flex bg-slate-800/50 p-1 rounded-2xl border border-slate-700 overflow-x-auto no-scrollbar">
+                            {[
+                                { id: 'all', label: 'Todas', color: 'bg-emerald-500' },
+                                { id: 'active', label: 'Activas', color: 'bg-emerald-400' },
+                                { id: 'finalized', label: 'Finalizadas', color: 'bg-slate-400' },
+                                { id: 'managed', label: 'Gestionadas', color: 'bg-purple-500', auth: true },
+                                { id: 'participated', label: 'Participadas', color: 'bg-blue-500', auth: true }
+                            ].filter(f => !f.auth || user).map(f => (
+                                <button
+                                    key={f.id}
+                                    onClick={() => setMapFilter(f.id)}
+                                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${mapFilter === f.id
+                                        ? `${f.color} text-slate-900 shadow-lg`
+                                        : 'text-slate-400 hover:text-white hover:bg-white/5'
+                                        }`}
+                                >
+                                    {f.label}
+                                </button>
+                            ))}
+                        </div>
                         {loading && <div className="text-emerald-500 animate-pulse text-sm">Actualizando mapa...</div>}
                     </div>
 
@@ -269,7 +291,14 @@ const LandingPage = ({
                                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                             />
-                            {campaigns.map(c => {
+                            {campaigns.filter(c => {
+                                if (mapFilter === 'all') return true;
+                                if (mapFilter === 'active') return c.status === 'active';
+                                if (mapFilter === 'finalized') return c.status !== 'active';
+                                if (mapFilter === 'managed') return user && c.ownerId === user.uid;
+                                if (mapFilter === 'participated') return user && c.participants?.includes(user.uid);
+                                return true;
+                            }).map(c => {
                                 let pos = c.coordinates || approxCoords[c.id];
                                 if (!pos || (typeof pos === 'object' && Object.keys(pos).length === 0)) return null;
 
@@ -361,20 +390,14 @@ const LandingPage = ({
                 </div>
 
                 {/* List Section */}
-                <div>
-                    <h3 className="text-2xl font-bold mb-8 flex items-center space-x-2">
-                        <span className="w-2 h-8 bg-teal-500 rounded-full mr-1"></span>
-                        <span>Jornadas Activas</span>
-                    </h3>
+                <div className="space-y-12">
+                    {(() => {
+                        const managed = campaigns.filter(c => user && c.ownerId === user.uid);
+                        const participated = campaigns.filter(c => user && c.participants?.includes(user.uid) && c.ownerId !== user.uid);
+                        const activePublic = campaigns.filter(c => c.status === 'active' && !(user && (c.ownerId === user.uid || c.participants?.includes(user.uid))));
+                        const finalized = campaigns.filter(c => c.status !== 'active' && !(user && (c.ownerId === user.uid || c.participants?.includes(user.uid))));
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {campaigns.length === 0 && !loading && (
-                            <div className="col-span-full py-12 text-center bg-slate-800/30 rounded-3xl border border-dashed border-slate-700">
-                                <p className="text-slate-500">No hay jornadas públicas actualmente. ¡Inicia sesión para crear una!</p>
-                            </div>
-                        )}
-
-                        {campaigns.map(c => (
+                        const renderCampaignCard = (c) => (
                             <div
                                 key={c.id}
                                 onClick={() => onSelectCampaign(c)}
@@ -412,8 +435,45 @@ const LandingPage = ({
                                     </div>
                                 </div>
                             </div>
-                        ))}
-                    </div>
+                        );
+
+                        const renderSection = (title, items, colorClass = "bg-teal-500") => {
+                            if (items.length === 0) return null;
+                            return (
+                                <div key={title}>
+                                    <h3 className="text-2xl font-bold mb-8 flex items-center space-x-2">
+                                        <span className={`w-2 h-8 ${colorClass} rounded-full mr-1`}></span>
+                                        <span>{title}</span>
+                                    </h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                        {items.map(renderCampaignCard)}
+                                    </div>
+                                </div>
+                            );
+                        };
+
+                        const groups = [];
+                        if (user) {
+                            groups.push({ title: "Jornadas que Administras", items: managed, color: "bg-purple-500" });
+                            groups.push({ title: "Jornadas en las que Participas", items: participated, color: "bg-blue-500" });
+                            groups.push({ title: "Otras Jornadas Activas", items: activePublic, color: "bg-emerald-500" });
+                        } else {
+                            groups.push({ title: "Jornadas Activas", items: activePublic, color: "bg-emerald-500" });
+                        }
+                        groups.push({ title: "Jornadas Finalizadas", items: finalized, color: "bg-slate-500" });
+
+                        const visibleGroups = groups.filter(g => g.items.length > 0);
+
+                        if (visibleGroups.length === 0 && !loading) {
+                            return (
+                                <div className="col-span-full py-12 text-center bg-slate-800/30 rounded-3xl border border-dashed border-slate-700">
+                                    <p className="text-slate-500">No hay jornadas disponibles actualmente. ¡Inicia sesión para crear una!</p>
+                                </div>
+                            );
+                        }
+
+                        return visibleGroups.map(g => renderSection(g.title, g.items, g.color));
+                    })()}
                 </div>
             </main>
         </div>

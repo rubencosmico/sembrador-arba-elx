@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import {
     collection, query, orderBy, onSnapshot, addDoc,
-    serverTimestamp, updateDoc, doc, where, getDocs
+    serverTimestamp, updateDoc, doc, where, getDocs,
+    deleteDoc, writeBatch
 } from 'firebase/firestore';
 import {
     PlusCircle, Power, Edit2, Check, X, ArrowLeft,
     Calendar, Globe, Lock, Link as LinkIcon, Users,
     Package, ArrowRight, UserPlus, Camera, Trash2,
     Download, Search, Table as TableIcon, Map as MapIcon,
-    ChevronLeft, ChevronRight, ArrowUpDown, UploadCloud
+    ChevronLeft, ChevronRight, ArrowUpDown, UploadCloud, Settings
 } from 'lucide-react';
 import { compressImage } from '../utils/imageUtils';
 import { filterAndSortLogs } from '../utils/logUtils';
@@ -51,30 +52,64 @@ const CampaignManager = ({
     const [expandedLogId, setExpandedLogId] = useState(null);
     const [viewImage, setViewImage] = useState(null);
     const [verifyingDelete, setVerifyingDelete] = useState(false);
+    const [verifyingCampaignDelete, setVerifyingCampaignDelete] = useState(false);
+    const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [showFilters, setShowFilters] = useState(false);
+    const [filters, setFilters] = useState({
+        seedId: '',
+        groupName: '',
+        microsite: '',
+        orientation: '',
+        withSubstrate: null, // null | true | false
+        withProtector: null
+    });
+
+    const toggleBooleanFilter = (key) => {
+        setFilters(prev => ({
+            ...prev,
+            [key]: prev[key] === null ? true : prev[key] === true ? false : null
+        }));
+    };
 
     useEffect(() => {
+        let isMounted = true;
         let q;
         const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'campaigns');
 
         if (isSuperAdmin) {
-            q = query(colRef, orderBy('createdAt', 'desc'));
+            // Remove orderBy to avoid composite index requirement
+            q = query(colRef);
         } else {
             // For regular users, show their owned campaigns
-            q = query(colRef, where('ownerId', '==', user.uid), orderBy('createdAt', 'desc'));
+            q = query(colRef, where('ownerId', '==', user.uid));
         }
 
         const unsubscribe = onSnapshot(q, (snap) => {
-            setAllCampaigns(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            if (!isMounted) return;
+            const campaigns = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            // Sort in-memory by createdAt desc
+            const sorted = campaigns.sort((a, b) => {
+                const dateA = a.createdAt?.seconds || 0;
+                const dateB = b.createdAt?.seconds || 0;
+                return dateB - dateA;
+            });
+            setAllCampaigns(sorted);
             setLoadingCampaigns(false);
         }, (err) => {
+            if (!isMounted) return;
             console.error("Error fetching campaigns:", err);
             setLoadingCampaigns(false);
         });
-        return () => unsubscribe();
+        return () => {
+            isMounted = false;
+            unsubscribe();
+        };
     }, [db, appId, user.uid, isSuperAdmin]);
 
     // Load sub-data when a campaign is selected for deep management
     useEffect(() => {
+        let isMounted = true;
         if (!selectedCampaignId) {
             setCampSeeds([]);
             setParticipants([]);
@@ -86,12 +121,14 @@ const CampaignManager = ({
         // Seeds
         const qSeeds = query(collection(db, ...dataPath, 'seeds'), where('campaignId', '==', selectedCampaignId));
         const unsubSeeds = onSnapshot(qSeeds, (snap) => {
+            if (!isMounted) return;
             setCampSeeds(snap.docs.map(d => ({ id: d.id, ...d.data() })));
         });
 
         // Logs
         const qLogs = query(collection(db, ...dataPath, 'logs'), where('campaignId', '==', selectedCampaignId), orderBy('timestamp', 'desc'));
         const unsubLogs = onSnapshot(qLogs, (snap) => {
+            if (!isMounted) return;
             setLogs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
         });
 
@@ -102,14 +139,15 @@ const CampaignManager = ({
                 const uPros = [];
                 for (const uid of camp.participants) {
                     const uDoc = await getDocs(query(collection(db, 'users'), where('__name__', '==', uid)));
-                    if (!uDoc.empty) uPros.push({ uid, ...uDoc.docs[0].data() });
+                    if (!uDoc.empty && isMounted) uPros.push({ uid, ...uDoc.docs[0].data() });
                 }
-                setParticipants(uPros);
+                if (isMounted) setParticipants(uPros);
             };
             fetchParticipants();
         }
 
         return () => {
+            isMounted = false;
             unsubSeeds();
             unsubLogs();
         };
@@ -189,11 +227,25 @@ const CampaignManager = ({
     const handleAssignSeed = async (seedId, userId, qty) => {
         const seed = campSeeds.find(s => s.id === seedId);
         const currentAssignments = seed.userAssignments || [];
+        const newQty = parseInt(qty) || 0;
+
+        // Calculate current total excluding this user
+        const otherAssignmentsTotal = currentAssignments
+            .filter(a => a.userId !== userId)
+            .reduce((acc, a) => acc + (a.quantity || 0), 0);
+
+        const totalWithNewAssignment = otherAssignmentsTotal + newQty;
+
+        if (totalWithNewAssignment > seed.totalQuantity) {
+            const available = seed.totalQuantity - otherAssignmentsTotal;
+            alert(`No puedes asignar ${newQty} semillas. Solo quedan ${available} disponibles en este lote.`);
+            return;
+        }
 
         // Update or add assignment
         const newAssignments = [...currentAssignments.filter(a => a.userId !== userId)];
-        if (qty > 0) {
-            newAssignments.push({ userId, quantity: parseInt(qty) });
+        if (newQty > 0) {
+            newAssignments.push({ userId, quantity: newQty });
         }
 
         try {
@@ -205,18 +257,99 @@ const CampaignManager = ({
         }
     };
 
-    const handleSort = (field) => {
-        if (sortField === field) {
-            setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-        } else {
-            setSortField(field);
-            setSortDirection('asc');
+    const handleDeleteCampaign = async (campId) => {
+        const camp = allCampaigns.find(c => c.id === campId);
+        if (!camp || user.uid !== camp.ownerId) {
+            alert("Solo el propietario puede borrar la jornada.");
+            return;
+        }
+
+        if (deleteConfirmationText.trim().toLowerCase() !== 'borrar') {
+            alert("Para confirmar, debes escribir 'borrar'.");
+            return;
+        }
+
+        setIsDeleting(true);
+        try {
+            const logsRef = collection(db, 'artifacts', appId, 'public', 'data', 'logs');
+            const seedsRef = collection(db, 'artifacts', appId, 'public', 'data', 'seeds');
+
+            // 1. Delete all logs
+            const logsQuery = await getDocs(query(logsRef, where('campaignId', '==', campId)));
+            if (!logsQuery.empty) {
+                const logsBatch = writeBatch(db);
+                logsQuery.docs.forEach(d => logsBatch.delete(d.ref));
+                await logsBatch.commit();
+            }
+
+            // 2. Delete all seeds
+            const seedsQuery = await getDocs(query(seedsRef, where('campaignId', '==', campId)));
+            if (!seedsQuery.empty) {
+                const seedsBatch = writeBatch(db);
+                seedsQuery.docs.forEach(d => seedsBatch.delete(d.ref));
+                await seedsBatch.commit();
+            }
+
+            // 3. Delete the campaign itself
+            await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'campaigns', campId));
+
+            setVerifyingCampaignDelete(false);
+            setDeleteConfirmationText('');
+            setSelectedCampaignId(null);
+        } catch (e) {
+            console.error(e);
+            alert("Error eliminando la jornada");
+        } finally {
+            setIsDeleting(false);
         }
     };
 
+    const filterOptions = React.useMemo(() => {
+        const options = {
+            seeds: [],
+            users: new Set(),
+            microsites: new Set(),
+            orientations: new Set()
+        };
+
+        logs.forEach(log => {
+            if (log.groupName) options.users.add(log.groupName);
+            if (log.microsite) options.microsites.add(log.microsite);
+            if (log.orientation) options.orientations.add(log.orientation);
+        });
+
+        const seedMap = campSeeds.reduce((acc, s) => {
+            let label = s.species;
+            if (s.provider) label += ` - ${s.provider}`;
+            if (s.treatment) label += ` (${s.treatment})`;
+            acc[s.id] = label;
+            return acc;
+        }, {});
+
+        options.seeds = Array.from(new Set(logs.map(l => l.seedId)))
+            .filter(Boolean)
+            .map(id => ({ id, name: seedMap[id] || 'Especie desconocida' }));
+
+        return {
+            seeds: options.seeds,
+            users: Array.from(options.users).sort(),
+            microsites: Array.from(options.microsites).sort(),
+            orientations: Array.from(options.orientations).sort()
+        };
+    }, [logs, campSeeds]);
+
     const filteredAndSortedLogs = React.useMemo(() => {
-        return filterAndSortLogs(logs, searchTerm, sortField, sortDirection);
-    }, [logs, searchTerm, sortField, sortDirection]);
+        const cumulativeFiltered = logs.filter(log => {
+            if (filters.seedId && log.seedId !== filters.seedId) return false;
+            if (filters.groupName && log.groupName !== filters.groupName) return false;
+            if (filters.microsite && log.microsite !== filters.microsite) return false;
+            if (filters.orientation && log.orientation !== filters.orientation) return false;
+            if (filters.withSubstrate !== null && !!log.withSubstrate !== filters.withSubstrate) return false;
+            if (filters.withProtector !== null && !!log.withProtector !== filters.withProtector) return false;
+            return true;
+        });
+        return filterAndSortLogs(cumulativeFiltered, searchTerm, sortField, sortDirection);
+    }, [logs, searchTerm, sortField, sortDirection, filters]);
 
     const totalPages = Math.ceil(filteredAndSortedLogs.length / logsPerPage);
     const currentLogs = filteredAndSortedLogs.slice(
@@ -360,6 +493,27 @@ const CampaignManager = ({
                                             </div>
                                         </div>
                                     </div>
+
+                                    {/* Danger Zone */}
+                                    {user?.uid === camp?.ownerId && (
+                                        <div className="pt-8 border-t border-red-500/20">
+                                            <div className="bg-red-500/5 p-8 rounded-[2rem] border border-red-500/20 space-y-4">
+                                                <div className="flex items-center gap-3 text-red-500">
+                                                    <Trash2 size={24} />
+                                                    <h3 className="text-lg font-black uppercase tracking-tight">Zona de Peligro</h3>
+                                                </div>
+                                                <p className="text-red-400/60 text-[11px] font-medium leading-relaxed">
+                                                    Al eliminar esta jornada, se borrarán de forma permanente todos sus lotes de semillas y todos los registros (golpes) de los sembradores. Esta acción no se puede deshacer.
+                                                </p>
+                                                <button
+                                                    onClick={() => setVerifyingCampaignDelete(true)}
+                                                    className="w-full px-8 py-4 bg-red-500 hover:bg-red-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all shadow-xl shadow-red-500/20 active:scale-95 flex items-center justify-center gap-3"
+                                                >
+                                                    <Trash2 size={18} /> Borrar Jornada Permanentemente
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </section>
 
@@ -485,64 +639,74 @@ const CampaignManager = ({
 
                             <section className="lg:col-span-2 space-y-6">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    {campSeeds.filter(s => !s.deleted).map(seed => (
-                                        <div key={seed.id} className="bg-white/5 p-6 rounded-[2.5rem] border border-white/10 flex flex-col h-full shadow-lg">
-                                            <div className="flex gap-4 mb-6">
-                                                <div className="w-20 h-20 rounded-3xl overflow-hidden bg-slate-950 shrink-0 border border-white/10">
-                                                    {seed.photo ? (
-                                                        <img src={seed.photo} className="w-full h-full object-cover" alt="" />
-                                                    ) : (
-                                                        <div className="w-full h-full flex items-center justify-center text-slate-800">
-                                                            <Package size={32} />
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                <div className="flex-1">
-                                                    <div className="flex justify-between items-start">
-                                                        <h4 className="font-black text-xl text-emerald-400 leading-tight uppercase">{seed.species}</h4>
-                                                        <button onClick={() => handleDeleteSeed(seed.id)} className="text-slate-700 hover:text-red-500 transition-colors">
-                                                            <Trash2 size={16} />
-                                                        </button>
-                                                    </div>
-                                                    <div className="flex flex-wrap gap-2 mt-2">
-                                                        <span className="text-[10px] font-black bg-white/5 text-slate-400 px-2 py-1 rounded-lg border border-white/10 uppercase tracking-widest">{seed.provider}</span>
-                                                        {seed.treatment && <span className="text-[10px] font-black bg-amber-500/10 text-amber-500 px-2 py-1 rounded-lg border border-amber-500/20 uppercase tracking-widest">{seed.treatment}</span>}
-                                                    </div>
-                                                </div>
-                                            </div>
+                                    {campSeeds.filter(s => !s.deleted).map(seed => {
+                                        const totalAssigned = seed.userAssignments?.reduce((acc, a) => acc + (a.quantity || 0), 0) || 0;
+                                        const remaining = seed.totalQuantity - totalAssigned;
 
-                                            <div className="bg-slate-950/50 p-6 rounded-3xl border border-white/5 space-y-4 flex-1 flex flex-col">
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Distribución por Sembrador:</p>
-                                                    <span className="text-[10px] font-black text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded-lg uppercase tracking-widest">{seed.totalQuantity} TOTAL</span>
-                                                </div>
-                                                <div className="space-y-2 flex-1 overflow-y-auto pr-1 no-scrollbar min-h-[150px]">
-                                                    {participants.map(p => {
-                                                        const assignment = seed.userAssignments?.find(a => a.userId === p.uid);
-                                                        return (
-                                                            <div key={p.uid} className="flex items-center justify-between gap-3 bg-white/5 p-3 rounded-2xl border border-white/5">
-                                                                <div className="flex items-center gap-2 min-w-0">
-                                                                    <div className="w-6 h-6 rounded-full bg-slate-800 flex items-center justify-center text-[8px] font-black shrink-0">
-                                                                        {p.displayName?.charAt(0)}
-                                                                    </div>
-                                                                    <span className="text-[11px] font-bold truncate text-slate-300">{p.displayName}</span>
-                                                                </div>
-                                                                <div className="flex items-center gap-2">
-                                                                    <input
-                                                                        type="number"
-                                                                        value={assignment?.quantity || ''}
-                                                                        placeholder="0"
-                                                                        onChange={(e) => handleAssignSeed(seed.id, p.uid, e.target.value)}
-                                                                        className="w-16 bg-slate-950 border border-white/10 rounded-xl p-2 text-center text-xs font-black text-emerald-400 outline-none focus:ring-2 focus:ring-emerald-500/50"
-                                                                    />
-                                                                </div>
+                                        return (
+                                            <div key={seed.id} className="bg-white/5 p-6 rounded-[2.5rem] border border-white/10 flex flex-col h-full shadow-lg">
+                                                <div className="flex gap-4 mb-6">
+                                                    <div className="w-20 h-20 rounded-3xl overflow-hidden bg-slate-950 shrink-0 border border-white/10">
+                                                        {seed.photo ? (
+                                                            <img src={seed.photo} className="w-full h-full object-cover" alt="" />
+                                                        ) : (
+                                                            <div className="w-full h-full flex items-center justify-center text-slate-800">
+                                                                <Package size={32} />
                                                             </div>
-                                                        );
-                                                    })}
+                                                        )}
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        <div className="flex justify-between items-start">
+                                                            <h4 className="font-black text-xl text-emerald-400 leading-tight uppercase">{seed.species}</h4>
+                                                            <button onClick={() => handleDeleteSeed(seed.id)} className="text-slate-700 hover:text-red-500 transition-colors">
+                                                                <Trash2 size={16} />
+                                                            </button>
+                                                        </div>
+                                                        <div className="flex flex-wrap gap-2 mt-2">
+                                                            <span className="text-[10px] font-black bg-white/5 text-slate-400 px-2 py-1 rounded-lg border border-white/10 uppercase tracking-widest">{seed.provider}</span>
+                                                            {seed.treatment && <span className="text-[10px] font-black bg-amber-500/10 text-amber-500 px-2 py-1 rounded-lg border border-amber-500/20 uppercase tracking-widest">{seed.treatment}</span>}
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="bg-slate-950/50 p-6 rounded-3xl border border-white/5 space-y-4 flex-1 flex flex-col">
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Distribución por Sembrador:</p>
+                                                        <div className="flex gap-2">
+                                                            <span className="text-[9px] font-black text-slate-500 bg-white/5 px-2 py-1 rounded-lg uppercase tracking-widest">{seed.totalQuantity} TOTAL</span>
+                                                            <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase tracking-widest ${remaining <= 0 ? 'bg-red-500/10 text-red-500' : 'bg-emerald-500/10 text-emerald-500'}`}>
+                                                                {remaining} RESTANTES
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="space-y-2 flex-1 overflow-y-auto pr-1 no-scrollbar min-h-[150px]">
+                                                        {participants.map(p => {
+                                                            const assignment = seed.userAssignments?.find(a => a.userId === p.uid);
+                                                            return (
+                                                                <div key={p.uid} className="flex items-center justify-between gap-3 bg-white/5 p-3 rounded-2xl border border-white/5">
+                                                                    <div className="flex items-center gap-2 min-w-0">
+                                                                        <div className="w-6 h-6 rounded-full bg-slate-800 flex items-center justify-center text-[8px] font-black shrink-0">
+                                                                            {p.displayName?.charAt(0)}
+                                                                        </div>
+                                                                        <span className="text-[11px] font-bold truncate text-slate-300">{p.displayName}</span>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <input
+                                                                            type="number"
+                                                                            value={assignment?.quantity || ''}
+                                                                            placeholder="0"
+                                                                            onChange={(e) => handleAssignSeed(seed.id, p.uid, e.target.value)}
+                                                                            className="w-16 bg-slate-950 border border-white/10 rounded-xl p-2 text-center text-xs font-black text-emerald-400 outline-none focus:ring-2 focus:ring-emerald-500/50"
+                                                                        />
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                     {campSeeds.length === 0 && (
                                         <div className="col-span-full py-20 bg-white/2 rounded-[2.5rem] border-2 border-dashed border-white/5 flex flex-col items-center justify-center">
                                             <Package size={48} className="text-white/5 mb-4" />
@@ -574,7 +738,7 @@ const CampaignManager = ({
                                     </div>
                                 </div>
 
-                                <div className="flex flex-col md:flex-row gap-4 mb-8">
+                                <div className="flex flex-col md:flex-row gap-4 mb-4">
                                     <div className="flex bg-slate-950 p-1.5 rounded-2xl border border-white/5 shrink-0">
                                         <button onClick={() => setViewMode('table')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'table' ? 'bg-white text-slate-950 shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Tabla</button>
                                         <button onClick={() => setViewMode('map')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'map' ? 'bg-white text-slate-950 shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Mapa</button>
@@ -589,7 +753,91 @@ const CampaignManager = ({
                                             onChange={(e) => setSearchTerm(e.target.value)}
                                         />
                                     </div>
+                                    <button
+                                        onClick={() => setShowFilters(!showFilters)}
+                                        className={`flex items-center gap-2 px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border ${showFilters || Object.values(filters).some(v => v !== '' && v !== null) ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-500' : 'bg-slate-950 border-white/10 text-slate-400 hover:bg-white/5'}`}
+                                    >
+                                        <Settings size={18} />
+                                        <span>Filtros</span>
+                                        {Object.values(filters).some(v => v !== '' && v !== null) && (
+                                            <span className="flex w-2 h-2 rounded-full bg-emerald-500"></span>
+                                        )}
+                                    </button>
                                 </div>
+
+                                {/* Filter Panel */}
+                                {showFilters && (
+                                    <div className="bg-slate-950/50 border border-white/10 rounded-[2rem] p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8 animate-fade-in">
+                                        <div className="space-y-2">
+                                            <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Variedad de Semilla</label>
+                                            <select
+                                                value={filters.seedId}
+                                                onChange={e => setFilters(prev => ({ ...prev, seedId: e.target.value }))}
+                                                className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-xs font-bold focus:ring-2 focus:ring-emerald-500/50 outline-none"
+                                            >
+                                                <option value="">Todas las especies</option>
+                                                {filterOptions.seeds.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                            </select>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Sembrador</label>
+                                            <select
+                                                value={filters.groupName}
+                                                onChange={e => setFilters(prev => ({ ...prev, groupName: e.target.value }))}
+                                                className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-xs font-bold focus:ring-2 focus:ring-emerald-500/50 outline-none"
+                                            >
+                                                <option value="">Todos los usuarios</option>
+                                                {filterOptions.users.map(u => <option key={u} value={u}>{u}</option>)}
+                                            </select>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Tipo de Nodriza</label>
+                                            <select
+                                                value={filters.microsite}
+                                                onChange={e => setFilters(prev => ({ ...prev, microsite: e.target.value }))}
+                                                className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-xs font-bold focus:ring-2 focus:ring-emerald-500/50 outline-none"
+                                            >
+                                                <option value="">Cualquier micrositio</option>
+                                                {filterOptions.microsites.map(m => <option key={m} value={m}>{m}</option>)}
+                                            </select>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Orientación</label>
+                                            <select
+                                                value={filters.orientation}
+                                                onChange={e => setFilters(prev => ({ ...prev, orientation: e.target.value }))}
+                                                className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-xs font-bold focus:ring-2 focus:ring-emerald-500/50 outline-none"
+                                            >
+                                                <option value="">Todas las orientaciones</option>
+                                                {filterOptions.orientations.map(o => <option key={o} value={o}>{o}</option>)}
+                                            </select>
+                                        </div>
+
+                                        <div className="flex gap-4 col-span-full pt-2 border-t border-white/5">
+                                            <button
+                                                onClick={() => toggleBooleanFilter('withSubstrate')}
+                                                className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${filters.withSubstrate === null ? 'bg-white/5 border-white/10 text-slate-500' : filters.withSubstrate ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-500' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}
+                                            >
+                                                Sustrato: {filters.withSubstrate === null ? 'INDIFERENTE' : filters.withSubstrate ? 'SI' : 'NO'}
+                                            </button>
+                                            <button
+                                                onClick={() => toggleBooleanFilter('withProtector')}
+                                                className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${filters.withProtector === null ? 'bg-white/5 border-white/10 text-slate-500' : filters.withProtector ? 'bg-amber-500/20 border-amber-500/50 text-amber-500' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}
+                                            >
+                                                Protector: {filters.withProtector === null ? 'INDIFERENTE' : filters.withProtector ? 'SI' : 'NO'}
+                                            </button>
+                                            <button
+                                                onClick={() => setFilters({ seedId: '', groupName: '', microsite: '', orientation: '', withSubstrate: null, withProtector: null })}
+                                                className="ml-auto px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest text-red-500 hover:bg-red-500/10 transition-colors"
+                                            >
+                                                Limpiar Filtros
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
 
                                 {viewMode === 'map' ? (
                                     <MapView logs={filteredAndSortedLogs} />
@@ -622,7 +870,7 @@ const CampaignManager = ({
                                                             <td className="p-4 text-slate-400 font-mono text-[11px]">
                                                                 {log.timestamp?.seconds ? new Date(log.timestamp.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
                                                             </td>
-                                                            <td className="p-4 text-emerald-100">{log.groupName || 'Anónimo'}</td>
+                                                            <td className="p-4 text-emerald-100">{participants.find(p => p.uid === log.userId)?.displayName || log.userName || log.groupName || 'Anónimo'}</td>
                                                             <td className="p-4 text-slate-300 italic">{log.seedName}</td>
                                                             <td className="p-4 text-white">{log.holeCount || 1}</td>
                                                         </tr>
@@ -727,6 +975,65 @@ const CampaignManager = ({
                         <img src={viewImage} className="max-w-full max-h-full object-contain rounded-3xl shadow-2xl border-4 border-white/10" alt="" />
                     </div>
                 )}
+
+                {/* Campaign Deletion Confirmation Modal */}
+                {verifyingCampaignDelete && (
+                    <div className="fixed inset-0 z-[100] bg-slate-950/90 backdrop-blur-xl flex items-center justify-center p-4">
+                        <div className="bg-slate-900 border border-white/10 rounded-[3rem] w-full max-w-lg p-10 space-y-8 animate-fadeIn text-center">
+                            <div className="w-20 h-20 bg-red-500/10 text-red-500 rounded-3xl flex items-center justify-center mx-auto border border-red-500/20">
+                                <Trash2 size={40} />
+                            </div>
+
+                            <div className="space-y-2">
+                                <h3 className="text-3xl font-black uppercase tracking-tight">¿Estás seguro?</h3>
+                                <p className="text-slate-400 text-sm font-medium">
+                                    Esta acción eliminará permanentemente la jornada <span className="text-white font-bold">"{camp?.name}"</span>, todos sus lotes de semillas y registros de siembra.
+                                </p>
+                            </div>
+
+                            <div className="bg-red-500/5 p-6 rounded-2xl border border-red-500/10 space-y-4">
+                                <p className="text-[10px] font-black text-red-500 uppercase tracking-widest text-center">
+                                    Escribe la palabra <span className="underline select-none">borrar</span> para confirmar:
+                                </p>
+                                <input
+                                    type="text"
+                                    placeholder="Confirmar acción..."
+                                    className="w-full bg-slate-950 border border-red-500/20 rounded-xl p-4 text-center text-sm font-bold uppercase tracking-widest focus:ring-2 focus:ring-red-500/50 outline-none transition-all placeholder:text-slate-800"
+                                    value={deleteConfirmationText}
+                                    onChange={(e) => setDeleteConfirmationText(e.target.value)}
+                                    autoFocus
+                                />
+                            </div>
+
+                            <div className="flex gap-4">
+                                <button
+                                    onClick={() => {
+                                        setVerifyingCampaignDelete(false);
+                                        setDeleteConfirmationText('');
+                                    }}
+                                    className="flex-1 px-8 py-5 bg-white/5 hover:bg-white/10 text-white rounded-3xl font-black text-xs uppercase tracking-widest transition-all"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    onClick={() => handleDeleteCampaign(camp.id)}
+                                    disabled={deleteConfirmationText.toLowerCase() !== 'borrar' || isDeleting}
+                                    className={`flex-1 px-8 py-5 rounded-3xl font-black text-xs uppercase tracking-widest transition-all inline-flex items-center justify-center gap-3
+                                        ${deleteConfirmationText.toLowerCase() === 'borrar'
+                                            ? 'bg-red-500 hover:bg-red-600 text-white shadow-xl shadow-red-500/20'
+                                            : 'bg-slate-800 text-slate-600 cursor-not-allowed border border-white/5'}`}
+                                >
+                                    {isDeleting ? (
+                                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                    ) : (
+                                        <Trash2 size={16} />
+                                    )}
+                                    {isDeleting ? 'Borrando...' : 'Confirmar'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         );
     }
@@ -827,6 +1134,7 @@ const CampaignManager = ({
                         </div>
                     ))}
                 </div>
+
             </div>
         </div>
     );
