@@ -46,7 +46,7 @@ export default defineConfig({
         manualChunks(id) {
           if (id.includes('node_modules')) {
             if (id.includes('firebase')) return 'firebase';
-            if (id.includes('leaflet')) return 'leaflet';
+            if (id.includes('leaflet') && !id.includes('react-leaflet')) return 'leaflet';
             return 'vendor';
           }
         }

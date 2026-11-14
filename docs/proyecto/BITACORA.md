@@ -1,5 +1,20 @@
 # Bitácora Técnica del Proyecto
 
+## [2026-11-14] — Fase 3 (Parcial): Despliegue Preview y Fix de Pantalla en Blanco en Producción
+
+### Resumen de la Sesión
+Se publicó `feature/user-management-identity` en `origin` para activar el entorno Preview en Vercel. Al abrir la URL Preview se detectó pantalla en blanco (`#root` vacío) y se reprodujo en local con `vite preview` + Chrome headless.
+
+### Causa Raíz y Corrección
+- **Chunking circular en [vite.config.js](file:///home/ruben/dev/sembrador-arba-elx/vite.config.js):** `manualChunks` agrupaba todo paquete que contuviera `leaflet` (incluidos `react-leaflet` y `@react-leaflet/core`) en el chunk `leaflet`, separado de `react` (`vendor`), provocando `TypeError: Cannot read properties of undefined (reading 'createContext')` al evaluar el bundle de producción. Se restringió el chunk `leaflet` con `!id.includes('react-leaflet')` para mantener `react-leaflet` y `@react-leaflet/core` junto a `react` en `vendor`.
+- **Inicialización defensiva en [src/firebase.js](file:///home/ruben/dev/sembrador-arba-elx/src/firebase.js):** Se envolvió `getMessaging(app)` en un bloque `try / catch` para evitar fallos síncronos en navegadores o contextos sin soporte de Push/FCM.
+
+### Verificación
+- `npm run test:run`: 7 ficheros, 15 tests en verde.
+- `npm run build` + verificación en navegador headless sobre `vite preview`: `0` errores de página (`PAGEERROR_COUNT: 0`) y render completo de la interfaz (`ROOT_HTML_LEN: 8811`).
+
+---
+
 ## [2026-11-14] — Fase 2: Estabilización, Compatibilidad Legacy, Reglas Firestore y Tests
 
 ### Resumen de la Sesión

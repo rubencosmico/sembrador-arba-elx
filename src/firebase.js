@@ -47,7 +47,14 @@ const db = initializeFirestore(app, {
 });
 const auth = getAuth(app);
 const storage = getStorage(app);
-const messaging = typeof window !== 'undefined' ? getMessaging(app) : null;
+let messaging = null;
+if (typeof window !== 'undefined') {
+    try {
+        messaging = getMessaging(app);
+    } catch (e) {
+        console.warn('Firebase Messaging not available:', e);
+    }
+}
 
 export {
     db, auth, storage, messaging, appId,

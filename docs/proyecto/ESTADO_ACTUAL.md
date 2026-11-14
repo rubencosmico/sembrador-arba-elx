@@ -5,8 +5,8 @@
 **Rama de producción (intocable):** `main` (`91b0f14`)
 
 ## 1. Situación General
-- **Fase 1 y Fase 2 completadas en local:** El repositorio está saneado (`main` y `feature/user-management-identity` como únicas ramas), todos los bugs bloqueantes y problemas de compatibilidad detectados en la auditoría han sido corregidos, `firestore.rules` ha sido actualizado y validado manualmente contra las consultas de la app mediante `firestore-rules-author`, y tanto la suite Vitest (`7` ficheros, `15` tests) como el build de producción (`vite build`) pasan en local sin errores.
-- **Pendiente de validación en remoto (Fase 3):** Los commits de Fase 1 y Fase 2 residen únicamente en `feature/user-management-identity` local (pendientes de `git push` tras confirmación del usuario). Las reglas de `firestore.rules` y los datos de producción en `arba-elx-siembra` siguen intactos sin desplegar hasta completar las pruebas Preview y la migración de Fase 4.
+- **Fase 1 y Fase 2 completadas, Fase 3 en curso:** El repositorio está saneado (`main` y `feature/user-management-identity`), se publicó la rama en `origin` para el entorno Preview de Vercel y se corrigió un error de pantalla en blanco en build de producción provocado por la separación de `react-leaflet` respecto a `react` en `vite.config.js` (`manualChunks`) junto con una guarda `try / catch` para `getMessaging(app)` en `src/firebase.js`.
+- **Pendiente de validación funcional en Vercel Preview (Fase 3):** Tras redesplegar la corrección en `origin/feature/user-management-identity`, queda completar la batería de pruebas funcionales en el nuevo Preview (login Google/Email/Magic Link, `?join=`, creación/borrado de jornada de prueba y reclamación de históricos) antes de pasar a la Fase 4.
 
 ## 2. Qué está terminado en `feature/user-management-identity`
 - UI y flujos completos de autenticación: Google, Email/Contraseña con medidor de seguridad (`auth-utils.js`), verificación de email con envío/reenvío seguro, recuperación de clave, Magic Link y baja/vinculación de proveedores (`ProfileView.jsx`).
@@ -22,4 +22,4 @@
 - **Migración de datos históricos (Fase 4):** Sigue pendiente ejecutar el backup JSON local y el script idempotente que asigne `ownerId: 'uo8s4kCGgrZJwXETFtTGThFAATE2'` a las campañas legacy y normalice lotes/logs antiguos antes del merge a `main`.
 
 ## 4. Siguiente Paso Inmediato
-Iniciar la **Fase 3** del `ROADMAP.md`: tras recibir confirmación del usuario, ejecutar `git push -u origin feature/user-management-identity` para disparar el despliegue Preview en Vercel, autorizar su dominio en Firebase Authentication y realizar las pruebas funcionales de validación.
+Continuar la **Fase 3** del `ROADMAP.md`: comprobar la nueva URL Preview de Vercel (o su alias de rama en `Authorized domains` de Firebase Authentication) y ejecutar la validación funcional completa antes de abordar los backups, migración de datos y despliegue de reglas en la **Fase 4**.
