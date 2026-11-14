@@ -1,25 +1,19 @@
 # Estado Actual del Proyecto
 
 **Última actualización:** 2026-11-14
-**Rama activa:** `feature/user-management-identity`
-**Rama de producción (intocable):** `main` (`91b0f14`)
+**Rama principal en producción:** `main` (sincronizada con `feature/user-management-identity`)
+**URL de Producción (Vercel):** https://sembrador-arba-elx.vercel.app
 
 ## 1. Situación General
-- **Fase 1 y Fase 2 completadas, Fase 3 en curso:** El repositorio está saneado (`main` y `feature/user-management-identity`), se publicó la rama en `origin` para el entorno Preview de Vercel y se corrigió un error de pantalla en blanco en build de producción provocado por la separación de `react-leaflet` respecto a `react` en `vite.config.js` (`manualChunks`) junto con una guarda `try / catch` para `getMessaging(app)` en `src/firebase.js`.
-- **Pendiente de validación funcional en Vercel Preview (Fase 3):** Tras redesplegar la corrección en `origin/feature/user-management-identity`, queda completar la batería de pruebas funcionales en el nuevo Preview (login Google/Email/Magic Link, `?join=`, creación/borrado de jornada de prueba y reclamación de históricos) antes de pasar a la Fase 4.
+- **Plan de Integración (Fases 1 a 4) COMPLETADO:** El repositorio ha sido saneado, estabilizado, validado íntegramente en Vercel Preview, respaldado en local (`backups/firestore-backup-2026-11-14T21-55-37-184Z.json`), migrado de forma aditiva e idempotente (`scripts/migrate-legacy-v2.js`), asegurado con las nuevas reglas de Firestore/Storage y fusionado en `main` para su despliegue en producción.
+- Todos los datos reales de campo (`7` campañas, `16` grupos, `25` lotes de semillas y `420` logs) están conservados y normalizados en `arba-elx-siembra` (`artifacts/arba-elx/public/data/*`).
 
-## 2. Qué está terminado en `feature/user-management-identity`
-- UI y flujos completos de autenticación: Google, Email/Contraseña con medidor de seguridad (`auth-utils.js`), verificación de email con envío/reenvío seguro, recuperación de clave, Magic Link y baja/vinculación de proveedores (`ProfileView.jsx`).
-- Aislamiento de sesión anónima (`u.isAnonymous`) para navegación pública en `LandingPage.jsx` y `CampaignDashboard.jsx` sin contaminar `/users` ni solicitar permisos Push innecesarios, junto con recuperación automática de enlaces `?join=` vía `sessionStorage`.
-- `CampaignManager.jsx` estabilizado con ordenación (`handleSort`), mapa GPS (`MapPin`), soporte para lotes legacy (`seed.totalQuantity ?? seed.quantity`), permisos para `ownerId`, `coordinators` e `isSuperAdmin`, y atribución consistente `ownerId || userId`.
-- Reclamación de registros históricos (`ClaimRecordsView.jsx` y `SuperAdminDashboard.jsx`) compatible con logs legacy de `main` (`ownerId` ausente o `null`) y sincronización hacia `userId` + `ownerId`.
-- Consultas sociales y de mensajería alineadas con `firestore.rules` (`MessagesView.jsx`, `ChatWindow.jsx`), y reglas endurecidas en `firestore.rules` (`users`, `campaigns` con self-join, `seeds`/`groups` con `delete` seguro, `logs` hasta 1000 golpes con soporte `ownerId` y compatibilidad legacy).
-- Suite de tests unitarios/integración actualizada (`src/App.test.jsx`, `src/components/SowerView.test.jsx`, `src/components/CampaignManager.test.jsx`).
+## 2. Capacidades Activas en Producción (`main`)
+- **Identidad y Autenticación:** Login con Google, Email/Contraseña con medidor de seguridad (`auth-utils.js`), verificación de correo con reenvío seguro, recuperación de clave, Magic Link, gestión de perfil y vinculación/baja de proveedores (`ProfileView.jsx`).
+- **Navegación Pública Segura:** Sesiones anónimas aisladas (`u.isAnonymous`) que permiten explorar mapa, jornadas y registros públicos sin crear perfiles basura en `/users`, solicitando inicio de sesión al intentar sembrar o acceder al cuaderno de campo (con botón de retorno en `LoginScreen.jsx`), y enlaces directos `?join=` recuperados vía `sessionStorage`.
+- **Gestión de Campañas y Atribución Unificada:** `CampaignManager.jsx` con ordenación, mapas GPS, soporte legacy y moderno en semillas (`totalQuantity ?? quantity`), permisos para `ownerId`, `coordinators` e `isSuperAdmin`; atribución unificada `ownerId` + `userId` en `ClaimRecordsView.jsx`, `SuperAdminDashboard.jsx` y `SowerView.jsx` (`420/420` logs reconciliados).
+- **Seguridad y Comunidad:** Consultas de mensajería y seguidores (`MessagesView.jsx`, `ChatWindow.jsx`, `SocialView.jsx`) alineadas con `firestore.rules` (ruleset `eaee2c8d-ff9a-4da3-a862-41279e7d1783`) y `storage.rules` (ruleset `be7ec24f-db84-4d9a-9db0-7a398858921f`).
 
-## 3. Riesgos o Pendientes antes de Pasar a `main`
-- **No desplegar aún `firestore.rules` en Firebase:** Algunas comprobaciones nuevas sobre campos/tamaños deben validarse en entorno de pruebas y coordinarse con la migración de Fase 4 para no interferir con `main` en campo.
-- **Dominio Preview de Vercel:** Tras hacer push de `feature/user-management-identity`, será necesario añadir la URL Preview generada en *Firebase Console → Authentication → Settings → Authorized domains* para probar el login con Google y Magic Link.
-- **Migración de datos históricos (Fase 4):** Sigue pendiente ejecutar el backup JSON local y el script idempotente que asigne `ownerId: 'uo8s4kCGgrZJwXETFtTGThFAATE2'` a las campañas legacy y normalice lotes/logs antiguos antes del merge a `main`.
-
-## 4. Siguiente Paso Inmediato
-Continuar la **Fase 3** del `ROADMAP.md`: comprobar la nueva URL Preview de Vercel (o su alias de rama en `Authorized domains` de Firebase Authentication) y ejecutar la validación funcional completa antes de abordar los backups, migración de datos y despliegue de reglas en la **Fase 4**.
+## 3. Notas Operativas y Próximo Paso Opcional
+- **Higiene opcional en Firebase Auth:** Cuando no se vayan a realizar más pruebas en ramas Preview antiguas, se pueden retirar de *Firebase Console → Authentication → Settings → Authorized domains* los subdominios temporales específicos de deploy (`...m0o4r4hrv...`, `...3or165t85...`).
+- **Base de trabajo futura:** Para próximas funcionalidades (campaña de invierno, asignación granular de lotes por usuario, notificaciones o mejoras en `TODO.md`), crear nuevas ramas de trabajo desde `main` manteniendo `main` protegida hasta validar cada entrega en Vercel Preview.

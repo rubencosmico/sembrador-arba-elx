@@ -34,3 +34,4 @@ test-results/
 # Firebase & Scripts
 service-account.json
 .features-gen/
+backups/

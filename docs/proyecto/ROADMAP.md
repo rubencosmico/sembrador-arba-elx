@@ -16,13 +16,13 @@
 - [x] **Actualizar Suite de Tests:** Adaptar `src/App.test.jsx` y reemplazar `src/components/CoordinatorView.test.jsx` para que `npm run test:run` y `npm run build` pasen al 100 %.
 
 ## Fase 3: Validación en Entorno Preview de Vercel
-- [ ] Subir cambios a `origin/feature/user-management-identity` y verificar despliegue Preview en Vercel.
-- [ ] Autorizar el dominio Preview de Vercel en Firebase Authentication → Authorized domains.
-- [ ] Ejecutar pruebas funcionales completas en Preview (login Google/Email/Magic Link, reclamación de logs reales, creación y borrado de jornada de prueba).
+- [x] Subir cambios a `origin/feature/user-management-identity` y verificar despliegue Preview en Vercel.
+- [x] Autorizar el dominio Preview de Vercel en Firebase Authentication → Authorized domains.
+- [x] Ejecutar pruebas funcionales completas en Preview (login Google/Email/Magic Link, reclamación de logs reales, creación y borrado de jornada de prueba).
 
 ## Fase 4: Migración de Datos y Paso a Producción (`main`)
-- [ ] Ejecutar backup completo de Firestore a JSON local (`scripts/backup-firestore.js`).
-- [ ] Ejecutar script idempotente `scripts/migrate-legacy-v2.js` (normalización de campañas con `ownerId` por defecto `uo8s4kCGgrZJwXETFtTGThFAATE2`, lotes y reconciliación de logs reclamados sin límite de 400 documentos).
-- [ ] Desplegar `firestore.rules` y `storage.rules` en Firebase (`arba-elx-siembra`).
-- [ ] Hacer merge de `feature/user-management-identity` a `main`, push a `origin/main` y verificar en producción para la campaña de invierno.
+- [x] Ejecutar backup completo de Firestore a JSON local (`scripts/backup-firestore.js`).
+- [x] Ejecutar script idempotente `scripts/migrate-legacy-v2.js` (normalización de campañas con `ownerId` por defecto `uo8s4kCGgrZJwXETFtTGThFAATE2`, lotes y reconciliación de logs reclamados sin límite de 400 documentos).
+- [x] Desplegar `firestore.rules` y `storage.rules` en Firebase (`arba-elx-siembra`).
+- [x] Hacer merge de `feature/user-management-identity` a `main`, push a `origin/main` y verificar en producción para la campaña de invierno.
 

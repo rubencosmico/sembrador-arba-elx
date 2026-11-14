@@ -1,5 +1,31 @@
 # Bitácora Técnica del Proyecto
 
+## [2026-11-14] — Fase 3 y Fase 4 Completadas: Validación Preview, Migración de Datos, Reglas y Paso a Producción (`main`)
+
+### Resumen de la Sesión
+Se completó la validación funcional completa en el entorno Preview de Vercel (con los 2 fixes detectados durante las pruebas) y se ejecutó íntegra la Fase 4: copia de seguridad completa en local, migración aditiva e idempotente sobre Firestore (`arba-elx-siembra`), despliegue de reglas de seguridad y fusión final en `main`.
+
+### Cambios Implementados en Cierre de Fase 3
+- **Bloqueo de siembra anónima en campañas legacy (`02bc860`, [CampaignDashboard.jsx](file:///home/ruben/dev/sembrador-arba-elx/src/components/CampaignDashboard.jsx), [App.jsx](file:///home/ruben/dev/sembrador-arba-elx/src/App.jsx)):** Corregido el flujo en jornadas históricas (`!isModern`, como `24/11/2026`) para impedir entrar en `SowerView` o mostrar «Mi Cuaderno de Campo» sin sesión autenticada (`!user || user.isAnonymous`), añadiendo además botón de acceso en la cabecera.
+- **Mejora UX en Login (`a861c02`, [LoginScreen.jsx](file:///home/ruben/dev/sembrador-arba-elx/src/components/LoginScreen.jsx)):** Añadidos botón superior *«Volver»* y enlace inferior *«Continuar como invitado / Volver»* mediante `onBack` para salir de la pantalla de login sin recargar el navegador.
+- **Validación en Vercel Preview y Config Cloud:** Añadido `https://*.vercel.app/*` a la API Key correcta (`...jWlQ`) en Google Cloud Console y el dominio estable de rama en Firebase Authorized domains; validados los 5 puntos del checklist funcional y aprobada en producción la reclamación real de 273 registros históricos.
+
+### Ejecución de Fase 4 (Migración, Reglas y Merge a `main`)
+- **Backup completo local ([scripts/backup-firestore.js](file:///home/ruben/dev/sembrador-arba-elx/scripts/backup-firestore.js)):** Exportados 492 documentos (colecciones raíz `admins`, `claimRequests`, `follows`, `messages`, `users` y subcolecciones bajo `artifacts/arba-elx/public/data/*`) a `backups/firestore-backup-2026-11-14T21-55-37-184Z.json` (`1,8 MB`, ignorado en `.gitignore`).
+- **Migración aditiva e idempotente ([scripts/migrate-legacy-v2.js](file:///home/ruben/dev/sembrador-arba-elx/scripts/migrate-legacy-v2.js)):** Ejecutadas **179 operaciones** en 1 batch:
+  - 7/7 campañas con `ownerId: "uo8s4kCGgrZJwXETFtTGThFAATE2"`, `coordinators: []`, `visibility: "public"` donde faltaba y `participants` consistente.
+  - 25/25 semillas con `totalQuantity`, `remainingQuantity` y `userAssignments: []` sin alterar datos existentes.
+  - 147/420 logs reconciliados sincronizando `userId` y `userName: "Rubén Martínez Candela"` con `ownerId` a partir de las reclamaciones aprobadas.
+  - Segunda pasada `--dry-run` verificada con `0` operaciones pendientes.
+- **Despliegue de Reglas (`firebase-admin` SecurityRules):** Desplegadas [firestore.rules](file:///home/ruben/dev/sembrador-arba-elx/firestore.rules) (ruleset `eaee2c8d-ff9a-4da3-a862-41279e7d1783`) y [storage.rules](file:///home/ruben/dev/sembrador-arba-elx/storage.rules) (ruleset `be7ec24f-db84-4d9a-9db0-7a398858921f`) sobre `arba-elx-siembra`.
+- **Integración en `main`:** Fusionada `feature/user-management-identity` sobre `main` y publicada en `origin/main`.
+
+### Verificación
+- `npm run test:run`: 7 archivos / 15 tests en verde.
+- `npm run build`: build de producción Vite sin errores.
+
+---
+
 ## [2026-11-14] — Fase 3 (Parcial): Despliegue Preview y Fix de Pantalla en Blanco en Producción
 
 ### Resumen de la Sesión
