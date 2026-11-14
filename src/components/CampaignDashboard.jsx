@@ -110,20 +110,20 @@ const CampaignDashboard = ({
     const isModern = React.useMemo(() => groups.length === 0 || seeds.some(s => s.userAssignments?.length > 0), [groups, seeds]);
 
     const hasPersonalSeeds = React.useMemo(() => {
+        if (!isRealUser) return false;
         if (!isModern) {
             return groups.some(g => g.assignedSeeds?.length > 0);
         }
-        if (!isRealUser) return false;
         return seeds.some(s => !s.deleted && s.userAssignments?.some(a => a.userId === user.uid));
     }, [isModern, seeds, groups, user, isRealUser]);
 
     const hasPersonalLogs = React.useMemo(() => {
-        if (!isModern) return logs.length > 0;
         if (!isRealUser) return false;
+        if (!isModern) return logs.length > 0;
         return logs.some(l => l.userId === user.uid || l.ownerId === user.uid);
     }, [logs, user, isRealUser, isModern]);
 
-    const isSowDisabled = (isRealUser || !isModern) && !hasPersonalSeeds;
+    const isSowDisabled = isRealUser && !hasPersonalSeeds;
 
     return (
         <div className="min-h-screen bg-slate-950 text-white font-sans pb-12 overflow-x-hidden">
@@ -148,6 +148,14 @@ const CampaignDashboard = ({
                 </div>
 
                 <div className="flex items-center gap-2">
+                    {!isRealUser && onLoginClick && (
+                        <button
+                            onClick={onLoginClick}
+                            className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs px-4 py-2 rounded-xl transition-all shadow-lg shadow-emerald-500/20"
+                        >
+                            Iniciar Sesión
+                        </button>
+                    )}
                     {campaign.visibility === 'private' ? (
                         <div className="hidden md:flex items-center gap-2 px-3 py-1 bg-orange-500/10 border border-orange-500/20 rounded-full">
                             <Lock size={12} className="text-orange-400" />
@@ -456,11 +464,11 @@ const CampaignDashboard = ({
                         {isActive && (
                             <button
                                 onClick={() => {
-                                    if (isSowDisabled) return;
-                                    if (isModern && !isRealUser) {
+                                    if (!isRealUser) {
                                         onLoginClick();
                                         return;
                                     }
+                                    if (isSowDisabled) return;
                                     onSelectRole('sower', 'form');
                                 }}
                                 disabled={isSowDisabled}
@@ -473,7 +481,9 @@ const CampaignDashboard = ({
                                 <div className="text-left w-full">
                                     <h4 className={`text-2xl font-black uppercase leading-none mb-2 ${isSowDisabled ? 'text-slate-500' : ''}`}>Registrar<br />Siembras</h4>
                                     <p className={`text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 ${isSowDisabled ? 'text-slate-600' : 'text-slate-950/60'}`}>
-                                        {isSowDisabled ? (
+                                        {!isRealUser ? (
+                                            <>Inicia sesión para participar <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" /></>
+                                        ) : isSowDisabled ? (
                                             <>Sin semillas asignadas <Info size={14} /></>
                                         ) : (
                                             <>Empezar ahora <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" /></>
@@ -484,7 +494,7 @@ const CampaignDashboard = ({
                         )}
 
                         {/* History Shortcut */}
-                        {(isRealUser || !isModern) && (
+                        {isRealUser && (
                             <button
                                 onClick={() => {
                                     if (!hasPersonalLogs) return;

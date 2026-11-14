@@ -574,6 +574,10 @@ function App() {
                 userFollowing={userFollowing}
                 onSocialAction={handleSocialAction}
                 onSelectRole={(r, view = 'form') => {
+                    if (!user || user.isAnonymous) {
+                        setShowLogin(true);
+                        return;
+                    }
                     setRole(r);
                     if (r === 'sower') setSowerInitialView(view);
                 }}

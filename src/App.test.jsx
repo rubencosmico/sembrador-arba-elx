@@ -118,7 +118,7 @@ describe('App Integration', () => {
         mockFirebase.signOut.mockResolvedValue();
     });
 
-    it('uses anonymous fallback without writing a user profile and navigates to SowerView', async () => {
+    it('uses anonymous fallback without writing a user profile and prompts login before entering SowerView', async () => {
         render(<App />);
 
         expect(screen.getByTestId('loading')).toBeInTheDocument();
@@ -146,8 +146,9 @@ describe('App Integration', () => {
 
         fireEvent.click(screen.getByText('Select Sower'));
         await waitFor(() => {
-            expect(screen.getByText('Sower View Loaded')).toBeInTheDocument();
+            expect(screen.getByText('Complete Login')).toBeInTheDocument();
         });
+        expect(screen.queryByText('Sower View Loaded')).not.toBeInTheDocument();
     });
 
     it('creates profile for verified user and auto-joins ?join= campaign links', async () => {
