@@ -475,7 +475,7 @@ function App() {
 
     // 0. Login Override
     if (showLogin && (!user || user.isAnonymous)) {
-        return <LoginScreen onLoginSuccess={(u) => { setUser(u); setShowLogin(false); }} />;
+        return <LoginScreen onLoginSuccess={(u) => { setUser(u); setShowLogin(false); }} onBack={() => setShowLogin(false)} />;
     }
 
     // 1. Campaign Manager / My Campaigns

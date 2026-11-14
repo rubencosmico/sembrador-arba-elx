@@ -16,9 +16,9 @@ import {
     GoogleAuthProvider as GoogleAuth
 } from 'firebase/auth';
 import { validatePassword, getStrengthLabel } from '../utils/auth-utils';
-import { Eye, EyeOff, Check, X, Mail } from 'lucide-react';
+import { Eye, EyeOff, Check, X, Mail, ArrowLeft } from 'lucide-react';
 
-const LoginScreen = ({ onLoginSuccess }) => {
+const LoginScreen = ({ onLoginSuccess, onBack }) => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
@@ -193,7 +193,17 @@ const LoginScreen = ({ onLoginSuccess }) => {
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-slate-900 p-4 transition-all duration-500">
-            <div className="max-w-md w-full bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 rounded-3xl p-8 shadow-2xl">
+            <div className="relative max-w-md w-full bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 rounded-3xl p-8 shadow-2xl">
+                {onBack && (
+                    <button
+                        type="button"
+                        onClick={onBack}
+                        className="absolute top-6 left-6 inline-flex items-center gap-1.5 text-sm text-slate-400 hover:text-white transition-colors"
+                    >
+                        <ArrowLeft size={16} />
+                        <span>Volver</span>
+                    </button>
+                )}
                 <div className="text-center mb-10">
                     <div className="inline-block p-4 rounded-2xl bg-emerald-500/10 mb-4">
                         <svg className="w-12 h-12 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -360,6 +370,18 @@ const LoginScreen = ({ onLoginSuccess }) => {
                         {isRegistering ? 'Inicia sesión' : 'Regístrate'}
                     </button>
                 </div>
+
+                {onBack && (
+                    <div className="mt-4 text-center">
+                        <button
+                            type="button"
+                            onClick={onBack}
+                            className="text-xs text-slate-400 hover:text-white underline underline-offset-4 transition-colors"
+                        >
+                            Continuar como invitado / Volver
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );

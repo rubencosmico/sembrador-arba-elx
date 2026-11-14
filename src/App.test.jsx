@@ -64,10 +64,13 @@ vi.mock('./hooks/useOfflineQueue', () => ({
 
 vi.mock('./components/LoadingScreen', () => ({ default: () => <div data-testid="loading">Loading...</div> }));
 vi.mock('./components/LoginScreen', () => ({
-    default: ({ onLoginSuccess }) => (
-        <button onClick={() => onLoginSuccess({ uid: 'u-login', email: 'login@test.com', emailVerified: true, providerData: [] })}>
-            Complete Login
-        </button>
+    default: ({ onLoginSuccess, onBack }) => (
+        <div>
+            <button onClick={() => onLoginSuccess({ uid: 'u-login', email: 'login@test.com', emailVerified: true, providerData: [] })}>
+                Complete Login
+            </button>
+            {onBack && <button onClick={onBack}>Back from Login</button>}
+        </div>
     )
 }));
 vi.mock('./components/LandingPage', () => ({
@@ -149,6 +152,11 @@ describe('App Integration', () => {
             expect(screen.getByText('Complete Login')).toBeInTheDocument();
         });
         expect(screen.queryByText('Sower View Loaded')).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByText('Back from Login'));
+        await waitFor(() => {
+            expect(screen.getByTestId('dashboard-campaign')).toHaveTextContent('Campaign 1');
+        });
     });
 
     it('creates profile for verified user and auto-joins ?join= campaign links', async () => {
