@@ -1,0 +1,29 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Funciones de utilidad
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Perfiles de usuario: Solo el dueño puede subir/borrar su avatar
+    match /users/{userId}/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId);
+    }
+
+    // Fotos de logs: Cualquier autenticado puede subir, pero solo el dueño o admin puede borrar
+    // Nota: El path actual no incluye el userId, por lo que el borrado es difícil de restringir por UID.
+    // Se recomienda cambiar el path a /photos/logs/{userId}/{logId}.jpg para máxima seguridad.
+    match /photos/logs/{photoPath=**} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow delete: if isSignedIn(); // Por ahora permitimos borrar si se está logueado
+    }
+  }
+}

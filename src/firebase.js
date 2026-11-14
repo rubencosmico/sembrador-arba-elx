@@ -1,7 +1,28 @@
 import { initializeApp } from 'firebase/app';
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
+import {
+    getAuth,
+    GoogleAuthProvider,
+    EmailAuthProvider,
+    onAuthStateChanged,
+    signOut,
+    signInWithPopup,
+    fetchSignInMethodsForEmail,
+    sendPasswordResetEmail,
+    sendEmailVerification,
+    linkWithCredential,
+    linkWithPopup,
+    EmailAuthCredential,
+    reauthenticateWithCredential,
+    updatePassword,
+    signInAnonymously,
+    sendSignInLinkToEmail,
+    isSignInWithEmailLink,
+    signInWithEmailLink,
+    deleteUser
+} from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
+import { getMessaging } from 'firebase/messaging';
 
 const getFirebaseConfig = () => {
     if (typeof __firebase_config !== 'undefined') return JSON.parse(__firebase_config || '{}');
@@ -14,15 +35,32 @@ const getFirebaseConfig = () => {
 const getAppId = () => {
     if (typeof __app_id !== 'undefined') return __app_id;
     if (import.meta.env && import.meta.env.VITE_APP_ID) return import.meta.env.VITE_APP_ID;
-    return 'arba-elx-default';
+    return 'arba-elx';
 };
 
 const firebaseConfig = getFirebaseConfig();
-export const appId = getAppId();
+const appId = getAppId();
 
 const app = initializeApp(firebaseConfig);
-export const db = initializeFirestore(app, {
+const db = initializeFirestore(app, {
     localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
 });
-export const auth = getAuth(app);
-export const storage = getStorage(app);
+const auth = getAuth(app);
+const storage = getStorage(app);
+let messaging = null;
+if (typeof window !== 'undefined') {
+    try {
+        messaging = getMessaging(app);
+    } catch (e) {
+        console.warn('Firebase Messaging not available:', e);
+    }
+}
+
+export {
+    db, auth, storage, messaging, appId,
+    GoogleAuthProvider, EmailAuthProvider, onAuthStateChanged, signOut, signInWithPopup,
+    fetchSignInMethodsForEmail, sendPasswordResetEmail, sendEmailVerification, linkWithCredential, linkWithPopup,
+    reauthenticateWithCredential, updatePassword,
+    signInAnonymously, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink,
+    deleteUser
+};

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { addDoc, updateDoc, deleteDoc, doc, collection, serverTimestamp, query, orderBy, where, getDocs, limit, onSnapshot } from 'firebase/firestore';
+import { addDoc, updateDoc, deleteDoc, doc, collection, serverTimestamp, query, orderBy, where, and, or, getDocs, limit, onSnapshot } from 'firebase/firestore';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import {
     Users, LogOut, ArrowRight, AlertTriangle, History,
@@ -10,12 +10,19 @@ import ManualView from './ManualView';
 import SowingForm from './SowingForm';
 import { filterAndSortLogs } from '../utils/logUtils';
 import { getOfflinePhoto } from '../utils/db'; // Import DB utility
+import Breadcrumbs from './Breadcrumbs';
 
-const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onResetRole, isReadOnly, isOnline, pendingCount, saveToQueue }) => {
+const SowerView = ({
+    db, appId, campaignId, seeds, groups,
+    userId, userProfile, storage, onResetRole, isReadOnly,
+    isOnline, pendingCount, saveToQueue, initialView = 'form',
+    onNavigate, campaign, role
+}) => {
     const [selectedGroupId, setSelectedGroupId] = useState(null);
+    const [isUserCentric, setIsUserCentric] = useState(false);
     const [groupStats, setGroupStats] = useState({});
     const [showManual, setShowManual] = useState(false);
-    const [view, setView] = useState('form');
+    const [view, setView] = useState(initialView);
     const [editingLog, setEditingLog] = useState(null);
     // FormData, GPS, and Photo states moved to SowingForm
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -41,9 +48,21 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
     const [logsPerPage, setLogsPerPage] = useState(10);
     const PAGE_SIZE_OPTIONS = [5, 10, 20, 50];
 
-    // Efecto para cargar estadísticas de grupos
+    // Check for user-centricity and auto-select
     useEffect(() => {
-        if (selectedGroupId || !campaignId) return;
+        // A campaign is modern if it has participants and the user is one of them, 
+        // OR if it has no groups.
+        const isModern = groups.length === 0 || (seeds.some(s => s.userAssignments?.length > 0));
+
+        if (isModern && userId && !selectedGroupId) {
+            setIsUserCentric(true);
+            setSelectedGroupId(`user_${userId}`);
+        }
+    }, [groups, seeds, userId, selectedGroupId]);
+
+    // Efecto para cargar estadísticas de grupos (Only if not user-centric or if selecting)
+    useEffect(() => {
+        if (selectedGroupId || !campaignId || isUserCentric) return;
 
         const q = query(
             collection(db, 'artifacts', appId, 'public', 'data', 'logs'),
@@ -72,37 +91,67 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
         return allTeamLogs.reduce((acc, log) => acc + (parseInt(log.holeCount) || 1), 0);
     }, [allTeamLogs]);
 
-    // Cargar todos los logs de la campaña y filtrar por equipo
+    // Cargar todos los logs de la campaña y filtrar por equipo/usuario
     useEffect(() => {
+        let isMounted = true;
         if (!selectedGroupId || !campaignId) return;
 
         const fetchLogs = async () => {
+            if (!isMounted) return;
             setLoadingLogs(true);
             setAllTeamLogs([]);
             setCurrentPage(1);
 
             try {
                 const logsRef = collection(db, 'artifacts', appId, 'public', 'data', 'logs');
-                const q = query(
-                    logsRef,
-                    where('campaignId', '==', campaignId),
-                    where('groupId', '==', selectedGroupId),
-                    orderBy('timestamp', 'desc'),
-                    limit(500)
-                );
+                let q;
+
+                if (isUserCentric) {
+                    q = query(
+                        logsRef,
+                        and(
+                            where('campaignId', '==', campaignId),
+                            or(
+                                where('userId', '==', userId),
+                                where('ownerId', '==', userId)
+                            )
+                        )
+                    );
+                } else {
+                    q = query(
+                        logsRef,
+                        where('campaignId', '==', campaignId),
+                        where('groupId', '==', selectedGroupId)
+                    );
+                }
 
                 const snapshot = await getDocs(q);
+                if (!isMounted) return;
+
                 const teamLogs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                setAllTeamLogs(teamLogs);
+
+                // Sort in-memory by timestamp desc
+                const sortedLogs = teamLogs.sort((a, b) => {
+                    const timeA = a.timestamp?.seconds || 0;
+                    const timeB = b.timestamp?.seconds || 0;
+                    return timeB - timeA;
+                });
+
+                // Apply limit in memory if needed (existing was 500)
+                setAllTeamLogs(sortedLogs.slice(0, 500));
             } catch (error) {
-                console.error('Error cargando logs:', error);
+                if (isMounted) console.error('Error cargando logs:', error);
             } finally {
-                setLoadingLogs(false);
+                if (isMounted) setLoadingLogs(false);
             }
         };
 
         fetchLogs();
-    }, [selectedGroupId, campaignId, db, appId]);
+
+        return () => {
+            isMounted = false;
+        };
+    }, [selectedGroupId, campaignId, db, appId, isUserCentric, userId]);
 
     // Resetear página cuando cambian filtros o resultados por página
     useEffect(() => {
@@ -241,9 +290,11 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
                 syncStatus,
                 campaignId,
                 groupId: selectedGroupId,
-                groupName: selectedGroup?.name || 'Desconocido',
+                groupName: isUserCentric ? (userProfile?.displayName || 'Sembrador') : (selectedGroup?.name || 'Desconocido'),
                 userId,
-                timestamp: serverTimestamp() // This will resolve locally instantly
+                ownerId: userId,
+                userName: userProfile?.displayName || 'Sembrador',
+                timestamp: serverTimestamp()
             };
 
             if (editingLog) {
@@ -273,9 +324,21 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
         }
     };
 
-    const selectedGroup = groups.find(g => g.id === selectedGroupId);
-    const mySeeds = selectedGroup ? seeds.filter(s => selectedGroup.assignedSeeds?.includes(s.id)) : [];
+    const selectedGroup = !isUserCentric ? groups.find(g => g.id === selectedGroupId) : null;
+
+    // Filter seeds: 
+    // 1. If userCentric, show seeds where userAssignments has current userId
+    // 2. If groupCentric, show seeds where assignedSeeds has groupId
+    const mySeeds = useMemo(() => {
+        if (isUserCentric) {
+            return seeds.filter(s => s.userAssignments?.some(a => a.userId === userId));
+        }
+        return selectedGroup ? seeds.filter(s => selectedGroup.assignedSeeds?.includes(s.id)) : [];
+    }, [isUserCentric, seeds, userId, selectedGroup]);
+
     const totalHoles = totalTeamHoles; // Usar el cálculo desde allTeamLogs
+    const hasSeeds = mySeeds.length > 0;
+    const hasLogs = allTeamLogs.length > 0;
 
     if (!selectedGroupId) {
         // Team Selection Screen (Simplified copy from original)
@@ -344,6 +407,7 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
 
     const exitGroup = () => {
         setSelectedGroupId(null);
+        setIsUserCentric(false);
         setEditingLog(null);
         setView('form');
     };
@@ -377,7 +441,8 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
                     <button onClick={() => setShowManual(true)} className="mb-1 text-emerald-950/30 hover:text-emerald-950/60 transition-colors">
                         <HelpCircle size={20} />
                     </button>
-                    <div>
+                    <div className="flex flex-col">
+                        <Breadcrumbs campaign={campaign} role={role} onNavigate={onNavigate} />
                         <div className="flex items-center gap-1.5 mb-0.5">
                             <span className={`w-2 h-2 rounded-full animate-pulse ${isReadOnly ? 'bg-red-500' : (!isOnline ? 'bg-gray-400' : 'bg-amber-500')}`}></span>
                             <span className={`text-[10px] font-bold uppercase tracking-widest ${isReadOnly ? 'text-red-900/40' : (!isOnline ? 'text-gray-500' : 'text-amber-900/40')}`}>
@@ -387,7 +452,9 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
                                 !isOnline ? <WifiOff size={10} className="text-gray-400 ml-1" /> : <Wifi size={10} className="text-emerald-400 ml-1" />
                             )}
                         </div>
-                        <h2 className="text-xl font-extrabold text-emerald-950 leading-none">{selectedGroup.name}</h2>
+                        <h2 className="text-xl font-extrabold text-emerald-950 leading-none">
+                            {isUserCentric ? 'Misión Personal' : (selectedGroup?.name || 'Cargando...')}
+                        </h2>
                     </div>
                 </div>
                 <div className="bg-emerald-950 text-white px-4 py-2 rounded-2xl shadow-lg border border-emerald-800 flex flex-col items-center min-w-[70px] relative">
@@ -404,325 +471,319 @@ const SowerView = ({ db, appId, campaignId, seeds, groups, userId, storage, onRe
             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 w-[90%] max-w-sm">
                 <div className="glass-card p-1.5 rounded-[2.5rem] flex items-center shadow-2xl border border-emerald-100/30">
                     {!isReadOnly && (
-                        <button onClick={() => setView('form')} className={`flex-1 flex flex-col items-center gap-1 py-3 rounded-[2rem] transition-all duration-300 ${view === 'form' ? 'bg-emerald-600 text-white shadow-lg' : 'text-emerald-900/40'}`}>
+                        <button
+                            onClick={() => setView('form')}
+                            className={`flex-1 flex flex-col items-center gap-1 py-3 rounded-[2rem] transition-all duration-300 
+                                ${view === 'form' ? 'bg-emerald-600 text-white shadow-lg' : 'text-emerald-900/40'}
+                                ${!hasSeeds ? 'opacity-40 grayscale' : ''}`}
+                        >
                             <PlusCircle size={20} /><span className="text-[10px] font-bold uppercase">Siembra</span>
                         </button>
                     )}
-                    <button onClick={() => setView('history')} className={`flex-1 flex flex-col items-center gap-1 py-3 rounded-[2rem] transition-all duration-300 ${view === 'history' ? 'bg-emerald-600 text-white shadow-lg' : 'text-emerald-900/40'}`}>
+                    <button
+                        onClick={() => setView('history')}
+                        className={`flex-1 flex flex-col items-center gap-1 py-3 rounded-[2rem] transition-all duration-300 
+                            ${view === 'history' ? 'bg-emerald-600 text-white shadow-lg' : 'text-emerald-900/40'}
+                            ${!hasLogs ? 'opacity-40 grayscale' : ''}`}
+                    >
                         <History size={20} /><span className="text-[10px] font-bold uppercase">Cuaderno</span>
                     </button>
                 </div>
             </div>
 
             {view === 'form' && !isReadOnly && (
-                <div className="px-3 md:px-5 pb-12 animate-slideUp">
-                    {editingLog && (
-                        <div className="bg-amber-100 p-4 rounded-2xl flex items-center justify-between border border-amber-200 mb-6 animate-pulse">
-                            <span className="text-amber-900 font-bold flex items-center gap-2">
-                                <Pencil size={18} /> Editando registro
-                            </span>
-                            <button onClick={cancelEditing} className="bg-white px-3 py-1.5 rounded-lg text-xs font-bold text-amber-900 shadow-sm">
-                                Cancelar
-                            </button>
-                        </div>
-                    )}
-
-                    <SowingForm
-                        initialData={editingLog || undefined}
-                        seeds={mySeeds}
-                        onSave={handleSow}
-                        onCancel={cancelEditing}
-                        onDelete={editingLog ? () => confirmAndDelete(editingLog.id) : undefined}
-                        isSaving={isSubmitting}
-                    />
-                </div>
-            )}
-
-
-            {view === 'history' && (
-                <div className="px-5 space-y-4 animate-slideUp pb-12 pt-4">
-                    {/* Header con total de golpes */}
-                    <div className="flex justify-between items-center">
-                        <h3 className="text-lg font-bold text-emerald-950">Cuaderno de Campo</h3>
-                        {!loadingLogs && allTeamLogs.length > 0 && (
-                            <span className="text-xs font-bold text-white bg-emerald-600 px-3 py-1.5 rounded-full shadow-sm">
-                                {totalTeamHoles} golpes totales
-                            </span>
-                        )}
-                    </div>
-
-                    {/* Barra de herramientas: Buscador y selector de registros por página */}
-                    {!loadingLogs && allTeamLogs.length > 0 && (
-                        <div className="flex gap-2 items-center">
-                            <div className="relative flex-1">
-                                <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-400" />
-                                <input
-                                    type="text"
-                                    placeholder="Buscar..."
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2.5 bg-white border border-emerald-100 rounded-xl text-sm outline-none focus:border-emerald-500 transition-colors"
-                                />
-                                {searchTerm && (
-                                    <button
-                                        onClick={() => setSearchTerm('')}
-                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-400 hover:text-emerald-600"
-                                    >
-                                        <X size={16} />
-                                    </button>
-                                )}
+                <div className="px-3 md:px-5 pb-12 animate-slideUp max-w-lg mx-auto pt-4">
+                    {!hasSeeds ? (
+                        <div className="glass-card p-8 rounded-3xl text-center flex flex-col items-center gap-4 border border-emerald-100/50 mt-10">
+                            <div className="w-16 h-16 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-500 mb-2">
+                                <AlertTriangle size={32} />
                             </div>
-                            <select
-                                value={logsPerPage}
-                                onChange={(e) => setLogsPerPage(parseInt(e.target.value))}
-                                className="px-3 py-2.5 bg-white border border-emerald-100 rounded-xl text-sm outline-none focus:border-emerald-500"
-                            >
-                                {PAGE_SIZE_OPTIONS.map(size => (
-                                    <option key={size} value={size}>{size} / pág</option>
-                                ))}
-                            </select>
-                        </div>
-                    )}
-
-                    {/* Botones de ordenación */}
-                    {!loadingLogs && allTeamLogs.length > 0 && (
-                        <div className="flex gap-2">
-                            <button
-                                onClick={() => handleSort('seedName')}
-                                className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${sortField === 'seedName' ? 'bg-emerald-600 text-white' : 'bg-emerald-100 text-emerald-700'}`}
-                            >
-                                Semilla
-                                {sortField === 'seedName' && (sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}
-                            </button>
-                            <button
-                                onClick={() => handleSort('microsite')}
-                                className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${sortField === 'microsite' ? 'bg-emerald-600 text-white' : 'bg-emerald-100 text-emerald-700'}`}
-                            >
-                                Micrositio
-                                {sortField === 'microsite' && (sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}
-                            </button>
-                        </div>
-                    )}
-
-                    {loadingLogs ? (
-                        <div className="flex flex-col items-center justify-center py-12 gap-3">
-                            <div className="w-8 h-8 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin"></div>
-                            <p className="text-sm text-emerald-800/60 font-medium">Cargando registros...</p>
-                        </div>
-                    ) : allTeamLogs.length === 0 ? (
-                        <div className="text-center py-12 text-emerald-800/40">
-                            <History size={32} className="mx-auto mb-2 opacity-50" />
-                            <p className="text-sm font-medium">Sin registros todavía</p>
-                        </div>
-                    ) : filteredAndSortedLogs.length === 0 ? (
-                        <div className="text-center py-12 text-emerald-800/40">
-                            <Search size={32} className="mx-auto mb-2 opacity-50" />
-                            <p className="text-sm font-medium">No se encontraron resultados</p>
-                            <button onClick={() => setSearchTerm('')} className="mt-2 text-xs text-emerald-600 font-bold underline">
-                                Limpiar búsqueda
-                            </button>
+                            <h3 className="text-xl font-bold text-emerald-900">Acceso Restringido</h3>
+                            <p className="text-emerald-600/80 leading-relaxed text-sm">
+                                Hace falta asignar primero semillas para poder registrar siembras en esta campaña.
+                            </p>
                         </div>
                     ) : (
                         <>
-                            {/* Info de paginación */}
-                            <div className="text-xs text-emerald-800/50 text-center">
-                                Mostrando {startIndex + 1}-{Math.min(endIndex, filteredAndSortedLogs.length)} de {filteredAndSortedLogs.length} registros
+                            {editingLog && (
+                                <div className="bg-amber-100 p-4 rounded-2xl flex items-center justify-between border border-amber-200 mb-6 animate-pulse">
+                                    <span className="text-amber-900 font-bold flex items-center gap-2 text-sm">
+                                        <Pencil size={18} /> Editando registro
+                                    </span>
+                                    <button onClick={cancelEditing} className="bg-white px-3 py-1.5 rounded-lg text-xs font-bold text-amber-900 shadow-sm">
+                                        Cancelar
+                                    </button>
+                                </div>
+                            )}
+
+                            <SowingForm
+                                initialData={editingLog || undefined}
+                                seeds={mySeeds}
+                                onSave={handleSow}
+                                onCancel={cancelEditing}
+                                onDelete={editingLog ? () => confirmAndDelete(editingLog.id) : undefined}
+                                isSaving={isSubmitting}
+                            />
+                        </>
+                    )}
+                </div>
+            )}
+
+            {view === 'history' && (
+                <div className="px-5 space-y-4 animate-slideUp pb-12 pt-4 max-w-2xl mx-auto">
+                    {!hasLogs ? (
+                        <div className="glass-card p-8 rounded-3xl text-center flex flex-col items-center gap-4 border border-emerald-100/50 mt-10">
+                            <div className="w-16 h-16 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-500 mb-2">
+                                <History size={32} />
+                            </div>
+                            <h3 className="text-xl font-bold text-emerald-900">Cuaderno Vacío</h3>
+                            <p className="text-emerald-600/80 leading-relaxed text-sm">
+                                Primero se deben registrar siembras para poder acceder al cuaderno de esta campaña.
+                            </p>
+                        </div>
+                    ) : (
+                        <>
+                            <div className="flex justify-between items-center">
+                                <h3 className="text-lg font-bold text-emerald-950">Cuaderno de Campo</h3>
+                                <span className="text-xs font-bold text-white bg-emerald-600 px-3 py-1.5 rounded-full shadow-sm">
+                                    {totalTeamHoles} golpes totales
+                                </span>
                             </div>
 
-                            {/* Lista de registros */}
-                            <div className="space-y-3 mt-4">
-                                {paginatedLogs.map(log => (
-                                    <div
-                                        key={log.id}
-                                        className={`glass-card rounded-2xl border transition-all cursor-pointer overflow-hidden ${expandedLogId === log.id ? 'bg-emerald-50/80 border-emerald-200 shadow-md' : 'border-emerald-100/30 hover:bg-white/60'}`}
-                                        onClick={() => setExpandedLogId(expandedLogId === log.id ? null : log.id)}
-                                    >
-                                        <div className="p-4 flex justify-between items-center">
-                                            <div className="flex-1">
-                                                <div className="font-bold text-emerald-950 text-sm flex items-center gap-2">
-                                                    {log.seedName}
-                                                    {log.notes && <span className="w-1.5 h-1.5 bg-amber-400 rounded-full"></span>}
-                                                </div>
-                                                <div className="text-xs text-emerald-800/50 flex items-center gap-2">
-                                                    <span>{log.microsite}</span>
-                                                    <span className="text-emerald-200">•</span>
-                                                    <span>{log.timestamp?.seconds ? new Date(log.timestamp.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}</span>
-                                                </div>
-                                            </div>
+                            <div className="flex gap-2 items-center">
+                                <div className="relative flex-1">
+                                    <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-400" />
+                                    <input
+                                        type="text"
+                                        placeholder="Buscar..."
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        className="w-full pl-10 pr-4 py-2.5 bg-white border border-emerald-100 rounded-xl text-sm outline-none focus:border-emerald-500 transition-colors shadow-sm"
+                                    />
+                                    {searchTerm && (
+                                        <button onClick={() => setSearchTerm('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-400 hover:text-emerald-600">
+                                            <X size={16} />
+                                        </button>
+                                    )}
+                                </div>
+                                <select
+                                    value={logsPerPage}
+                                    onChange={(e) => setLogsPerPage(parseInt(e.target.value))}
+                                    className="px-3 py-2.5 bg-white border border-emerald-100 rounded-xl text-sm outline-none focus:border-emerald-500 shadow-sm"
+                                >
+                                    {PAGE_SIZE_OPTIONS.map(size => (
+                                        <option key={size} value={size}>{size} / pág</option>
+                                    ))}
+                                </select>
+                            </div>
 
-                                            <div className="flex items-center gap-2">
-                                                <div className="text-right mr-1">
-                                                    <div className="font-black text-emerald-700 text-lg">{log.holeCount || 1}</div>
-                                                    <div className="text-[9px] font-bold text-emerald-800/30 uppercase">Golpes</div>
-                                                </div>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => handleSort('seedName')}
+                                    className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${sortField === 'seedName' ? 'bg-emerald-600 text-white shadow-md' : 'bg-emerald-100 text-emerald-700'}`}
+                                >
+                                    Semilla
+                                    {sortField === 'seedName' && (sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}
+                                </button>
+                                <button
+                                    onClick={() => handleSort('microsite')}
+                                    className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${sortField === 'microsite' ? 'bg-emerald-600 text-white shadow-md' : 'bg-emerald-100 text-emerald-700'}`}
+                                >
+                                    Micrositio
+                                    {sortField === 'microsite' && (sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}
+                                </button>
+                            </div>
 
-                                                {!isReadOnly && (
-                                                    <>
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.preventDefault();
-                                                                e.stopPropagation();
-                                                                startEditing(log);
-                                                            }}
-                                                            className="w-9 h-9 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600 hover:bg-emerald-100 active:scale-95 transition-all border border-emerald-100"
-                                                        >
-                                                            <Pencil size={16} />
-                                                        </button>
+                            {loadingLogs ? (
+                                <div className="flex flex-col items-center justify-center py-12 gap-3">
+                                    <div className="w-8 h-8 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin"></div>
+                                    <p className="text-sm text-emerald-800/60 font-medium">Cargando registros...</p>
+                                </div>
+                            ) : filteredAndSortedLogs.length === 0 ? (
+                                <div className="text-center py-12 text-emerald-800/40">
+                                    <Search size={32} className="mx-auto mb-2 opacity-50" />
+                                    <p className="text-sm font-medium">No se encontraron resultados</p>
+                                    <button onClick={() => setSearchTerm('')} className="mt-2 text-xs text-emerald-600 font-bold underline">
+                                        Limpiar búsqueda
+                                    </button>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="text-xs text-emerald-800/50 text-center">
+                                        Mostrando {startIndex + 1}-{Math.min(endIndex, filteredAndSortedLogs.length)} de {filteredAndSortedLogs.length} registros
+                                    </div>
 
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.preventDefault();
-                                                                e.stopPropagation();
-                                                                confirmAndDelete(log.id);
-                                                            }}
-                                                            className="w-9 h-9 bg-red-50 rounded-xl flex items-center justify-center text-red-500 hover:bg-red-100 active:scale-95 transition-all border border-red-100"
-                                                        >
-                                                            <Trash2 size={16} />
-                                                        </button>
-                                                    </>
-                                                )}
+                                    <div className="space-y-3 mt-4">
+                                        {paginatedLogs.map(log => (
+                                            <div
+                                                key={log.id}
+                                                className={`glass-card rounded-2xl border transition-all cursor-pointer overflow-hidden ${expandedLogId === log.id ? 'bg-emerald-50/80 border-emerald-200 shadow-md' : 'border-emerald-100/30 hover:bg-white/60'}`}
+                                                onClick={() => setExpandedLogId(expandedLogId === log.id ? null : log.id)}
+                                            >
+                                                <div className="p-4 flex justify-between items-center">
+                                                    <div className="flex-1">
+                                                        <div className="font-bold text-emerald-950 text-sm flex items-center gap-2">
+                                                            {log.seedName}
+                                                            {log.notes && <span className="w-1.5 h-1.5 bg-amber-400 rounded-full"></span>}
+                                                        </div>
+                                                        <div className="text-xs text-emerald-800/50 flex items-center gap-2">
+                                                            <span>{log.microsite}</span>
+                                                            <span className="text-emerald-200">•</span>
+                                                            <span>{log.timestamp?.seconds ? new Date(log.timestamp.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}</span>
+                                                        </div>
+                                                    </div>
 
-                                                <div className="text-emerald-300 ml-1">
-                                                    {expandedLogId === log.id ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {expandedLogId === log.id && (
-                                            <div className="px-4 pb-4 pt-0 border-t border-emerald-100/20 bg-emerald-50/20 animate-fadeIn">
-                                                <div className="flex flex-col gap-4 mt-4">
-                                                    {(() => {
-                                                        const displayUrl = (log.photoUrl === 'PENDING' ? localImages[log.id] : log.photoUrl) || log.photo;
-                                                        return displayUrl ? (
-                                                            <div className="w-full bg-black/5 rounded-xl overflow-hidden shadow-sm relative" onClick={(e) => { e.stopPropagation(); setViewImage(displayUrl); }}>
-                                                                <img src={displayUrl} alt="Evidencia" className={`w-full h-auto max-h-[400px] object-contain mx-auto ${log.photoUrl === 'PENDING' ? 'opacity-70 grayscale-[0.5]' : ''}`} />
-                                                                {log.photoUrl === 'PENDING' && (
-                                                                    <div className="absolute top-2 right-2 bg-amber-500 text-white text-[10px] font-bold px-2 py-1 rounded-full flex items-center gap-1 shadow-md">
-                                                                        <UploadCloud size={10} /> Pendiente
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        ) : (
-                                                            <div className="w-full h-24 rounded-xl bg-emerald-100/50 flex flex-col items-center justify-center text-emerald-800/30 border-2 border-dashed border-emerald-200">
-                                                                <Camera size={24} />
-                                                                <span className="text-[10px] font-bold uppercase mt-1">Sin foto</span>
-                                                            </div>
-                                                        );
-                                                    })()}
-
-                                                    <div className="grid grid-cols-2 gap-3 text-xs text-emerald-900">
-                                                        <div className="col-span-2">
-                                                            <span className="text-[9px] font-bold text-emerald-800/40 uppercase tracking-wider block mb-1">Nota</span>
-                                                            <div className="bg-white/60 p-2 rounded-lg italic border border-emerald-50 text-emerald-950">"{log.notes || 'Sin notas'}"</div>
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="text-right mr-1">
+                                                            <div className="font-black text-emerald-700 text-lg">{log.holeCount || 1}</div>
+                                                            <div className="text-[9px] font-bold text-emerald-800/30 uppercase">Golpes</div>
                                                         </div>
 
-                                                        <div>
-                                                            <span className="text-[9px] font-bold text-emerald-800/40 uppercase tracking-wider block">Orientación</span>
-                                                            <span className="font-bold">{log.orientation || '-'}</span>
-                                                        </div>
-                                                        <div>
-                                                            <span className="text-[9px] font-bold text-emerald-800/40 uppercase tracking-wider block">Semillas/Hoyo</span>
-                                                            <span className="font-bold">{log.quantity || '1'}</span>
-                                                        </div>
-
-                                                        <div>
-                                                            <span className="text-[9px] font-bold text-emerald-800/40 uppercase tracking-wider block">Sustrato</span>
-                                                            <div className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-bold text-[10px] uppercase ${log.withSubstrate ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-400'}`}>{log.withSubstrate ? "SÍ" : "NO"}</div>
-                                                        </div>
-                                                        <div>
-                                                            <span className="text-[9px] font-bold text-emerald-800/40 uppercase tracking-wider block">Protector</span>
-                                                            <div className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-bold text-[10px] uppercase ${log.withProtector ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-400'}`}>{log.withProtector ? "SÍ" : "NO"}</div>
-                                                        </div>
-
-                                                        <div className="col-span-2">
-                                                            <span className="text-[9px] font-bold text-emerald-800/40 uppercase tracking-wider block">Tratamiento</span>
-                                                            <span className="font-medium">{seeds.find(s => s.id === log.seedId)?.treatment || 'Ninguno'}</span>
-                                                        </div>
-
-                                                        <div className="col-span-2">
-                                                            <span className="text-[9px] font-bold text-emerald-800/40 uppercase tracking-wider block">GPS</span>
-                                                            {log.location?.lat ? (
-                                                                <div className="flex items-center gap-2">
-                                                                    <MapPin size={14} className="text-emerald-400" />
-                                                                    <span className="font-mono">{log.location.lat.toFixed(6)}, {log.location.lng.toFixed(6)}</span>
-                                                                    <span className="text-[9px] bg-white px-1 rounded border border-emerald-100">±{log.location.acc?.toFixed(0)}m</span>
-                                                                </div>
-                                                            ) : <span className="text-gray-400 italic">Sin ubicación</span>}
+                                                        {!isReadOnly && (
+                                                            <>
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.preventDefault();
+                                                                        e.stopPropagation();
+                                                                        setEditingLog(log);
+                                                                        setView('form');
+                                                                    }}
+                                                                    className="w-9 h-9 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600 hover:bg-emerald-100 active:scale-95 transition-all border border-emerald-100"
+                                                                >
+                                                                    <Pencil size={16} />
+                                                                </button>
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.preventDefault();
+                                                                        e.stopPropagation();
+                                                                        confirmAndDelete(log.id);
+                                                                    }}
+                                                                    className="w-9 h-9 bg-red-50 rounded-xl flex items-center justify-center text-red-500 hover:bg-red-100 active:scale-95 transition-all border border-red-100 shadow-sm"
+                                                                >
+                                                                    <Trash2 size={16} />
+                                                                </button>
+                                                            </>
+                                                        )}
+                                                        <div className="text-emerald-300 ml-1">
+                                                            {expandedLogId === log.id ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
                                                         </div>
                                                     </div>
                                                 </div>
+
+                                                {expandedLogId === log.id && (
+                                                    <div className="px-4 pb-4 pt-0 border-t border-emerald-100/20 bg-emerald-50/20 animate-fadeIn">
+                                                        <div className="flex flex-col gap-4 mt-4">
+                                                            {(() => {
+                                                                const displayUrl = log.photoUrl || log.photo;
+                                                                return displayUrl ? (
+                                                                    <div className="w-full bg-black/5 rounded-xl overflow-hidden shadow-sm relative" onClick={(e) => { e.stopPropagation(); setViewImage(displayUrl); }}>
+                                                                        <img src={displayUrl} alt="Evidencia" className="w-full h-auto max-h-[400px] object-contain mx-auto" />
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="w-full h-24 rounded-xl bg-emerald-100/50 flex flex-col items-center justify-center text-emerald-800/30 border-2 border-dashed border-emerald-200">
+                                                                        <Camera size={24} />
+                                                                        <span className="text-[10px] font-bold uppercase mt-1">Sin foto</span>
+                                                                    </div>
+                                                                );
+                                                            })()}
+
+                                                            <div className="grid grid-cols-2 gap-3 text-xs text-emerald-900 border-t border-emerald-100/20 pt-4">
+                                                                <div className="col-span-2">
+                                                                    <span className="text-[9px] font-bold text-emerald-800/40 uppercase tracking-wider block mb-1">Nota</span>
+                                                                    <div className="bg-white/60 p-2 rounded-lg italic border border-emerald-50 text-emerald-950">"{log.notes || 'Sin notas'}"</div>
+                                                                </div>
+                                                                <div>
+                                                                    <span className="text-[9px] font-bold text-emerald-800/40 uppercase tracking-wider block">Orientación</span>
+                                                                    <span className="font-bold">{log.orientation || '-'}</span>
+                                                                </div>
+                                                                <div>
+                                                                    <span className="text-[9px] font-bold text-emerald-800/40 uppercase tracking-wider block">Semillas/Hoyo</span>
+                                                                    <span className="font-bold">{log.quantity || '1'}</span>
+                                                                </div>
+                                                                <div>
+                                                                    <span className="text-[9px] font-bold text-emerald-800/40 uppercase tracking-wider block">Sustrato</span>
+                                                                    <div className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-bold text-[10px] uppercase ${log.withSubstrate ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-400'}`}>{log.withSubstrate ? "SÍ" : "NO"}</div>
+                                                                </div>
+                                                                <div>
+                                                                    <span className="text-[9px] font-bold text-emerald-800/40 uppercase tracking-wider block">Protector</span>
+                                                                    <div className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-bold text-[10px] uppercase ${log.withProtector ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-400'}`}>{log.withProtector ? "SÍ" : "NO"}</div>
+                                                                </div>
+                                                                <div className="col-span-2">
+                                                                    <span className="text-[9px] font-bold text-emerald-800/40 uppercase tracking-wider block">GPS</span>
+                                                                    {log.location?.lat ? (
+                                                                        <div className="flex items-center gap-2">
+                                                                            <MapPin size={14} className="text-emerald-400" />
+                                                                            <span className="font-mono">{log.location.lat.toFixed(6)}, {log.location.lng.toFixed(6)}</span>
+                                                                            <span className="text-[9px] bg-white px-1 rounded border border-emerald-100">±{log.location.acc?.toFixed(0)}m</span>
+                                                                        </div>
+                                                                    ) : <span className="text-gray-400 italic">Sin ubicación</span>}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
-                                        )}
+                                        ))}
                                     </div>
-                                ))}
-                            </div>
 
-                            {/* Controles de paginación */}
-                            {
-                                totalPages > 1 && (
-                                    <div className="flex items-center justify-center gap-2 pt-2">
-                                        <button
-                                            onClick={() => goToPage(currentPage - 1)}
-                                            disabled={currentPage === 1}
-                                            className="w-9 h-9 flex items-center justify-center bg-emerald-100 text-emerald-700 rounded-xl font-bold text-sm disabled:opacity-30 disabled:cursor-not-allowed hover:bg-emerald-200 transition-colors"
-                                        >
-                                            ←
-                                        </button>
+                                    {/* Controles de paginación */}
+                                    {totalPages > 1 && (
+                                        <div className="flex items-center justify-center gap-2 pt-6">
+                                            <button
+                                                onClick={() => goToPage(currentPage - 1)}
+                                                disabled={currentPage === 1}
+                                                className="w-9 h-9 flex items-center justify-center bg-emerald-100 text-emerald-700 rounded-xl font-bold text-sm disabled:opacity-30 disabled:cursor-not-allowed hover:bg-emerald-200 transition-colors shadow-sm"
+                                            >
+                                                ←
+                                            </button>
 
-                                        {/* Números de página */}
-                                        <div className="flex gap-1">
-                                            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                                                let pageNum;
-                                                if (totalPages <= 5) {
-                                                    pageNum = i + 1;
-                                                } else if (currentPage <= 3) {
-                                                    pageNum = i + 1;
-                                                } else if (currentPage >= totalPages - 2) {
-                                                    pageNum = totalPages - 4 + i;
-                                                } else {
-                                                    pageNum = currentPage - 2 + i;
-                                                }
-                                                return (
-                                                    <button
-                                                        key={pageNum}
-                                                        onClick={() => goToPage(pageNum)}
-                                                        className={`w-9 h-9 flex items-center justify-center rounded-xl font-bold text-sm transition-colors ${currentPage === pageNum
-                                                            ? 'bg-emerald-600 text-white'
-                                                            : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
-                                                            }`}
-                                                    >
-                                                        {pageNum}
-                                                    </button>
-                                                );
-                                            })}
+                                            <div className="flex gap-1">
+                                                {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                                                    let pageNum;
+                                                    if (totalPages <= 5) pageNum = i + 1;
+                                                    else if (currentPage <= 3) pageNum = i + 1;
+                                                    else if (currentPage >= totalPages - 2) pageNum = totalPages - 4 + i;
+                                                    else pageNum = currentPage - 2 + i;
+
+                                                    return (
+                                                        <button
+                                                            key={pageNum}
+                                                            onClick={() => goToPage(pageNum)}
+                                                            className={`w-9 h-9 flex items-center justify-center rounded-xl font-bold text-sm transition-colors ${currentPage === pageNum ? 'bg-emerald-600 text-white shadow-md' : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'}`}
+                                                        >
+                                                            {pageNum}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+
+                                            <button
+                                                onClick={() => goToPage(currentPage + 1)}
+                                                disabled={currentPage === totalPages}
+                                                className="w-9 h-9 flex items-center justify-center bg-emerald-100 text-emerald-700 rounded-xl font-bold text-sm disabled:opacity-30 disabled:cursor-not-allowed hover:bg-emerald-200 transition-colors shadow-sm"
+                                            >
+                                                →
+                                            </button>
                                         </div>
-
-                                        <button
-                                            onClick={() => goToPage(currentPage + 1)}
-                                            disabled={currentPage === totalPages}
-                                            className="w-9 h-9 flex items-center justify-center bg-emerald-100 text-emerald-700 rounded-xl font-bold text-sm disabled:opacity-30 disabled:cursor-not-allowed hover:bg-emerald-200 transition-colors"
-                                        >
-                                            →
-                                        </button>
-                                    </div>
-                                )
-                            }
+                                    )}
+                                </>
+                            )}
                         </>
                     )}
-                </div >
+                </div>
             )}
 
-            {
-                viewImage && (
-                    <div className="fixed inset-0 z-[60] bg-black flex items-center justify-center p-4 animate-fadeIn" onClick={() => setViewImage(null)}>
-                        <button onClick={() => setViewImage(null)} className="absolute top-4 right-4 text-white bg-white/20 p-2 rounded-full backdrop-blur-md">
-                            <X size={24} />
-                        </button>
-                        <img src={viewImage} className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" />
-                    </div>
-                )
-            }
-        </div >
+            {showManual && <ManualView onClose={() => setShowManual(false)} />}
+
+            {viewImage && (
+                <div className="fixed inset-0 z-[60] bg-black/95 flex items-center justify-center p-4 animate-fadeIn" onClick={() => setViewImage(null)}>
+                    <button onClick={() => setViewImage(null)} className="absolute top-6 right-6 text-white bg-white/10 p-2 rounded-full backdrop-blur-md hover:bg-white/20 transition-all">
+                        <X size={24} />
+                    </button>
+                    <img src={viewImage} className="max-w-full max-h-full object-contain rounded-lg shadow-2xl shadow-emerald-950/20" alt="Vista ampliada" />
+                </div>
+            )}
+        </div>
     );
 };
 

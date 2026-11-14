@@ -1,18 +1,30 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
-import { signInAnonymously } from 'firebase/auth';
+import {
+    db, auth, storage, appId,
+    onAuthStateChanged,
+    signOut,
+    messaging,
+    signInAnonymously,
+    isSignInWithEmailLink,
+    signInWithEmailLink,
+    sendEmailVerification
+} from './firebase';
+import { getToken, onMessage } from 'firebase/messaging';
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, arrayUnion, collection, query, where, onSnapshot } from 'firebase/firestore';
 
-// Firebase Config
-import { db, auth, storage, appId } from './firebase';
-
-// Components
 // Components
 import LoadingScreen from './components/LoadingScreen';
-import WelcomeScreen from './components/WelcomeScreen';
-import CampaignSelector from './components/CampaignSelector';
-import CoordinatorView from './components/CoordinatorView';
+import LoginScreen from './components/LoginScreen';
+import LandingPage from './components/LandingPage';
+import CampaignDashboard from './components/CampaignDashboard';
 import SowerView from './components/SowerView';
 import CampaignManager from './components/CampaignManager';
+import ClaimRecordsView from './components/ClaimRecordsView';
+import SuperAdminDashboard from './components/SuperAdminDashboard';
+import MessagesView from './components/MessagesView';
+import ChatWindow from './components/ChatWindow';
+import SocialView from './components/SocialView';
+import ProfileView from './components/ProfileView';
 
 // Utils
 import MigratePhotos from './utils/migrate-photos';
@@ -21,30 +33,276 @@ import { useOfflineQueue } from './hooks/useOfflineQueue';
 
 function App() {
     const [user, setUser] = useState(null);
+    const [userProfile, setUserProfile] = useState(null);
+    const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+    const [showLogin, setShowLogin] = useState(false);
+    const [currentView, setCurrentView] = useState('home'); // 'home' | 'claim' | 'admin' | 'messages' | 'chat' | 'social' | 'profile' | 'manage'
+    const [chatPartnerId, setChatPartnerId] = useState(null);
     const [role, setRole] = useState(null); // 'coordinator' | 'sower'
+    const [sowerInitialView, setSowerInitialView] = useState('form');
     const [campaign, setCampaign] = useState(null); // { id, name, status }
     const [isManagingCampaigns, setIsManagingCampaigns] = useState(false);
 
     // Data
     const [seeds, setSeeds] = useState([]);
     const [groups, setGroups] = useState([]);
-    const [logs, setLogs] = useState([]); // Only fetched for coordinator usually, or small scale
+    const [logs, setLogs] = useState([]);
+    const [campaignParticipants, setCampaignParticipants] = useState([]);
+    const [userFollowing, setUserFollowing] = useState(new Set());
     const [loading, setLoading] = useState(true);
+    const [verificationMessage, setVerificationMessage] = useState('');
+    const [verificationError, setVerificationError] = useState('');
 
     // Offline Queue
     const { isOnline, pendingCount, saveToQueue } = useOfflineQueue(storage, db);
 
-    // Auth
+    // Auth & Profile
     useEffect(() => {
-        signInAnonymously(auth).then((u) => {
-            console.log("Auth success", u.user.uid);
-            setUser(u.user);
-            setLoading(false);
-        }).catch(err => {
-            console.error("Auth failed", err);
+        const unsubscribe = onAuthStateChanged(auth, async (u) => {
+            if (u) {
+                if (u.isAnonymous) {
+                    setUser(u);
+                    setUserProfile(null);
+                    setIsSuperAdmin(false);
+                    setLoading(false);
+                    return;
+                }
+
+                // Scenario 8: Email Verification Gate
+                if (!u.emailVerified && u.providerData?.some(p => p.providerId === 'password')) {
+                    setUser(u);
+                    setLoading(false);
+                    return;
+                }
+
+                setUser(u);
+
+                // Fetch/Create Profile
+                const userDocRef = doc(db, 'users', u.uid);
+                const userDoc = await getDoc(userDocRef);
+
+                if (userDoc.exists()) {
+                    setUserProfile(userDoc.data());
+                } else {
+                    const newProfile = {
+                        displayName: u.displayName || 'Sembrador Anónimo',
+                        email: u.email,
+                        photoURL: u.photoURL || null,
+                        createdAt: new Date(),
+                        defaultRole: 'sower'
+                    };
+                    await setDoc(userDocRef, newProfile);
+                    setUserProfile(newProfile);
+                }
+
+                // Check SuperAdmin (Secure Collection)
+                const adminDoc = await getDoc(doc(db, 'admins', u.uid));
+                setIsSuperAdmin(adminDoc.exists());
+                handleNotifications(u.uid);
+            } else {
+                setUser(null);
+                setUserProfile(null);
+                setIsSuperAdmin(false);
+                // Garantizar que siempre haya una sesión para cumplir con las reglas de Firestore
+                signInAnonymously(auth).catch(err => console.warn("Error silent anonymous sign-in:", err));
+            }
             setLoading(false);
         });
+
+        return () => unsubscribe();
     }, []);
+
+    const handleNotifications = async (userId) => {
+        if (!messaging) return;
+
+        try {
+            // Check if messaging is supported in this browser
+            const { isSupported } = await import('firebase/messaging');
+            if (!(await isSupported())) {
+                console.warn("[NOTIFICATIONS] Messaging not supported in this browser");
+                return;
+            }
+
+            const permission = await Notification.requestPermission();
+            if (permission === 'granted') {
+                // Explicitly register service worker for more robustness
+                const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+
+                // Send config to SW (Scenario: Security fix to avoid hardcoded keys)
+                const sendConfig = () => {
+                    const configStr = import.meta.env.VITE_FIREBASE_CONFIG;
+                    if (configStr && registration.active) {
+                        registration.active.postMessage({
+                            type: 'SET_FIREBASE_CONFIG',
+                            config: JSON.parse(configStr)
+                        });
+                    }
+                };
+
+                if (registration.active) {
+                    sendConfig();
+                } else {
+                    registration.addEventListener('updatefound', () => {
+                        const installingWorker = registration.installing;
+                        installingWorker.onstatechange = () => {
+                            if (installingWorker.state === 'activated') sendConfig();
+                        };
+                    });
+                }
+
+                console.log("[NOTIFICATIONS] Service Worker registered:", registration);
+
+                const token = await getToken(messaging, {
+                    vapidKey: import.meta.env.VITE_VAPID_KEY,
+                    serviceWorkerRegistration: registration
+                });
+
+                if (token) {
+                    await updateDoc(doc(db, 'users', userId), { fcmToken: token });
+                    console.log("[NOTIFICATIONS] Token saved:", token);
+                } else {
+                    console.warn("[NOTIFICATIONS] No token received");
+                }
+            } else {
+                console.warn("[NOTIFICATIONS] Permission denied:", permission);
+            }
+        } catch (err) {
+            if (err.name === 'AbortError') {
+                console.warn("[NOTIFICATIONS] Push registration aborted. This often happens due to an ad-blocker or lack of browser support for the push service.");
+            } else {
+                console.error("Error gestionando notificaciones:", err);
+            }
+        }
+
+        onMessage(messaging, (payload) => {
+            console.log('Mensaje en primer plano:', payload);
+            alert(`${payload.notification.title}: ${payload.notification.body}`);
+        });
+    };
+
+    // Handle Magic Links
+    useEffect(() => {
+        if (isSignInWithEmailLink(auth, window.location.href)) {
+            const processMagicLink = async () => {
+                let email = window.localStorage.getItem('emailForSignIn');
+                if (!email) {
+                    email = window.prompt('Por favor, confirma tu email para completar el inicio de sesión:');
+                }
+
+                if (email) {
+                    try {
+                        const result = await signInWithEmailLink(auth, email, window.location.href);
+                        window.localStorage.removeItem('emailForSignIn');
+                        // Limpiar la URL de parámetros de Firebase
+                        window.history.replaceState({}, document.title, window.location.origin + window.location.pathname);
+                        console.log("Sesión iniciada con Magic Link:", result.user.email);
+                    } catch (err) {
+                        console.error("Error al iniciar sesión con Magic Link:", err);
+                        alert("El enlace ha caducado o ya ha sido utilizado.");
+                    }
+                }
+            };
+            processMagicLink();
+        }
+    }, [appId]);
+
+    // Handle Join Links
+    useEffect(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlJoinId = urlParams.get('join');
+        if (urlJoinId) {
+            window.sessionStorage.setItem('pendingJoinCampaignId', urlJoinId);
+        }
+        const joinId = urlJoinId || window.sessionStorage.getItem('pendingJoinCampaignId');
+
+        if (!joinId || !user) return;
+
+        if (user.isAnonymous) {
+            setShowLogin(true);
+            return;
+        }
+
+        const needsEmailVerification = !user.emailVerified &&
+            user.providerData?.some(p => p.providerId === 'password') &&
+            !user.providerData?.some(p => p.providerId === 'google.com');
+        if (needsEmailVerification) return;
+
+        const processJoin = async () => {
+            try {
+                const campRef = doc(db, 'artifacts', appId, 'public', 'data', 'campaigns', joinId);
+                const campSnap = await getDoc(campRef);
+
+                if (campSnap.exists()) {
+                    const campData = campSnap.data();
+                    const updatedParticipants = Array.from(new Set([...(campData.participants || []), user.uid]));
+                    await updateDoc(campRef, {
+                        participants: arrayUnion(user.uid)
+                    });
+                    setCampaign({ id: joinId, ...campData, participants: updatedParticipants });
+                }
+            } catch (err) {
+                console.error("Error procesando enlace de invitación:", err);
+            } finally {
+                window.sessionStorage.removeItem('pendingJoinCampaignId');
+                if (urlJoinId) {
+                    window.history.replaceState({}, document.title, "/");
+                }
+            }
+        };
+        processJoin();
+    }, [user, appId]);
+
+    // Inactivity Auto-Logout (2 hours)
+    useEffect(() => {
+        if (!user || user.isAnonymous) return;
+
+        let timeoutId;
+        const INACTIVITY_LIMIT = 2 * 60 * 60 * 1000; // 2 hours
+
+        const resetTimer = () => {
+            if (timeoutId) clearTimeout(timeoutId);
+            timeoutId = setTimeout(() => {
+                console.log("Inactivity limit reached. Logging out...");
+                handleLogout();
+            }, INACTIVITY_LIMIT);
+        };
+
+        const activityEvents = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart'];
+        activityEvents.forEach(event => {
+            window.addEventListener(event, resetTimer);
+        });
+
+        resetTimer();
+
+        return () => {
+            if (timeoutId) clearTimeout(timeoutId);
+            activityEvents.forEach(event => {
+                window.removeEventListener(event, resetTimer);
+            });
+        };
+    }, [user]);
+
+    const handleLogout = () => {
+        signOut(auth);
+        setCampaign(null);
+        setRole(null);
+    };
+
+    const handleNavigate = (id) => {
+        if (id === 'home') {
+            setCampaign(null);
+            setRole(null);
+            setCurrentView('home');
+        } else if (id === 'campaign') {
+            setRole(null);
+        } else if (['profile', 'social', 'messages', 'claim', 'manage', 'admin'].includes(id)) {
+            setCurrentView(id);
+            if (id !== 'manage' || !campaign) {
+                setCampaign(null);
+                setRole(null);
+            }
+        }
+    };
 
     // Load Data - Dependent on Campaign
     useEffect(() => {
@@ -84,9 +342,63 @@ function App() {
         };
     }, [campaign]); // Removed 'role' dependency as data depends on campaign, not role.
 
+    // Fetch participant profiles when campaign changes
+    useEffect(() => {
+        if (!campaign || !campaign.participants || campaign.participants.length === 0) {
+            setCampaignParticipants([]);
+            return;
+        }
+
+        const fetchParticipants = async () => {
+            const profiles = [];
+            // Use batching if there are many, but for now loop is fine for common cases
+            for (const uid of campaign.participants) {
+                const uDoc = await getDoc(doc(db, 'users', uid));
+                if (uDoc.exists()) {
+                    profiles.push({ uid, ...uDoc.data() });
+                }
+            }
+            setCampaignParticipants(profiles);
+        };
+
+        fetchParticipants();
+    }, [campaign, db]);
+
+    // Social Logic: Follows
+    useEffect(() => {
+        if (!user || user.isAnonymous) {
+            setUserFollowing(new Set());
+            return;
+        }
+
+        const q = query(collection(db, 'follows'), where('followerId', '==', user.uid));
+        const unsubscribe = onSnapshot(q, (snap) => {
+            setUserFollowing(new Set(snap.docs.map(d => d.data().followingId)));
+        });
+
+        return () => unsubscribe();
+    }, [db, user?.uid, user?.isAnonymous]);
+
+    const handleSocialAction = async (action, targetId) => {
+        if (!user || user.isAnonymous) return;
+        if (action === 'follow') {
+            const followId = `${user.uid}_${targetId}`;
+            const followRef = doc(db, 'follows', followId);
+
+            if (userFollowing.has(targetId)) {
+                await deleteDoc(doc(db, 'follows', followId));
+            } else {
+                await setDoc(followRef, {
+                    followerId: user.uid,
+                    followingId: targetId,
+                    createdAt: new Date()
+                });
+            }
+        }
+    };
+
     if (loading) return <LoadingScreen />;
 
-    // Modo migración: acceder con ?migrate=photos
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('migrate') === 'photos') {
         return <MigratePhotos db={db} appId={appId} storage={storage} />;
@@ -96,26 +408,186 @@ function App() {
         return <StorageDiagnostic db={db} appId={appId} storage={storage} />;
     }
 
-    // 0. Campaign Manager
-    if (isManagingCampaigns) {
-        return <CampaignManager db={db} appId={appId} onBack={() => setIsManagingCampaigns(false)} />;
+    // 0. Verification Gate
+    if (user && !user.emailVerified && user.providerData?.some(p => p.providerId === 'password')) {
+        // If they have Google, they're usually already verified from Google's side
+        const hasGoogle = user.providerData?.some(p => p.providerId === 'google.com');
+
+        if (!hasGoogle) { // Only force gate if they ONLY have password (or if we really want to force it)
+            return (
+                <div className="min-h-screen flex items-center justify-center bg-slate-900 p-4">
+                    <div className="max-w-md w-full bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 rounded-3xl p-8 shadow-2xl text-center">
+                        <div className="inline-block p-4 rounded-2xl bg-amber-500/10 mb-6">
+                            <svg className="w-12 h-12 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                            </svg>
+                        </div>
+                        <h2 className="text-2xl font-bold text-white mb-4">Verifica tu email</h2>
+                        <p className="text-slate-400 mb-8">Hemos enviado un enlace de verificación a <strong>{user.email}</strong>. Por favor, revisa tu bandeja de entrada y pulsa en el enlace para activar tu cuenta.</p>
+
+                        {verificationMessage && (
+                            <div className="mb-4 p-3 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs">
+                                {verificationMessage}
+                            </div>
+                        )}
+
+                        {verificationError && (
+                            <div className="mb-4 p-3 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 text-xs">
+                                {verificationError}
+                            </div>
+                        )}
+
+                        <div className="space-y-4">
+                            <button
+                                onClick={() => window.location.reload()}
+                                className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 rounded-xl transition-all"
+                            >
+                                Ya he verificado mi cuenta
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    setVerificationMessage('');
+                                    setVerificationError('');
+                                    try {
+                                        await sendEmailVerification(auth.currentUser);
+                                        setVerificationMessage('Email de verificación reenviado.');
+                                    } catch (err) {
+                                        console.error(err);
+                                        setVerificationError('No se pudo reenviar el email. Inténtalo más tarde.');
+                                    }
+                                }}
+                                className="w-full bg-slate-800 hover:bg-slate-700 text-white font-semibold py-3 rounded-xl transition-all"
+                            >
+                                Reenviar email de verificación
+                            </button>
+                            <button
+                                onClick={handleLogout}
+                                className="w-full bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3 rounded-xl transition-all"
+                            >
+                                Cerrar Sesión
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
     }
 
-    // 1. Select Campaign
-    if (!campaign) {
+    // 0. Login Override
+    if (showLogin && (!user || user.isAnonymous)) {
+        return <LoginScreen onLoginSuccess={(u) => { setUser(u); setShowLogin(false); }} onBack={() => setShowLogin(false)} />;
+    }
+
+    // 1. Campaign Manager / My Campaigns
+    if (currentView === 'manage' && user && !user.isAnonymous) {
         return (
-            <CampaignSelector
-                db={db}
-                appId={appId}
-                onSelectCampaign={setCampaign}
-                onManage={user?.uid ? () => setIsManagingCampaigns(true) : null}
+            <CampaignManager
+                db={db} appId={appId} user={user}
+                isSuperAdmin={isSuperAdmin}
+                onBack={() => handleNavigate('home')}
+                onNavigate={handleNavigate}
             />
         );
     }
 
-    // 2. Select Role
+    // 2. Specialized Internal Views
+    if (currentView === 'claim' && user && !user.isAnonymous) {
+        return <ClaimRecordsView db={db} appId={appId} user={user} onBack={() => handleNavigate('home')} onNavigate={handleNavigate} />;
+    }
+
+    if (currentView === 'admin' && isSuperAdmin) {
+        return <SuperAdminDashboard db={db} appId={appId} onBack={() => setCurrentView('home')} />;
+    }
+
+    if (currentView === 'messages' && user && !user.isAnonymous) {
+        return (
+            <MessagesView
+                db={db} user={user}
+                onSelectChat={(id) => { setChatPartnerId(id); setCurrentView('chat'); }}
+                onBack={() => handleNavigate('home')}
+                onNavigate={handleNavigate}
+            />
+        );
+    }
+
+    if (currentView === 'chat' && user && !user.isAnonymous && chatPartnerId) {
+        return (
+            <ChatWindow
+                db={db} user={user}
+                otherUserId={chatPartnerId}
+                onBack={() => setCurrentView('messages')}
+            />
+        );
+    }
+
+    if (currentView === 'social' && user && !user.isAnonymous) {
+        return (
+            <SocialView
+                db={db} user={user}
+                onBack={() => handleNavigate('home')}
+                onNavigate={handleNavigate}
+                onChatClick={(id) => { setChatPartnerId(id); setCurrentView('chat'); }}
+            />
+        );
+    }
+
+    if (currentView === 'profile' && user && !user.isAnonymous) {
+        return (
+            <ProfileView
+                db={db} user={user} userProfile={userProfile} storage={storage}
+                onBack={() => handleNavigate('home')}
+                onNavigate={handleNavigate}
+                onUpdateProfile={(p) => setUserProfile(p)}
+            />
+        );
+    }
+
+    // 3. Main Entry: Landing Page (if no campaign selected)
+    if (!campaign) {
+        return (
+            <LandingPage
+                db={db} appId={appId} user={user}
+                isSuperAdmin={isSuperAdmin}
+                onSelectCampaign={(c) => setCampaign(c)}
+                onLoginClick={() => setShowLogin(true)}
+                onClaimClick={() => setCurrentView('claim')}
+                onAdminClick={() => setCurrentView('admin')}
+                onProfileClick={() => setCurrentView('profile')}
+                onManageClick={() => setCurrentView('manage')}
+                onMessagesClick={() => setCurrentView('messages')}
+                onSocialClick={() => setCurrentView('social')}
+                onLogout={handleLogout}
+            />
+        );
+    }
+
+    // 2. Campaign Dashboard (replaced WelcomeScreen)
     if (!role) {
-        return <WelcomeScreen setRole={setRole} campaignName={campaign.name} onBack={() => setCampaign(null)} />;
+        return (
+            <CampaignDashboard
+                campaign={campaign}
+                user={user}
+                logs={logs}
+                isSuperAdmin={isSuperAdmin}
+                participantCount={campaign?.participants?.length || 0}
+                participants={campaignParticipants}
+                userFollowing={userFollowing}
+                onSocialAction={handleSocialAction}
+                onSelectRole={(r, view = 'form') => {
+                    if (!user || user.isAnonymous) {
+                        setShowLogin(true);
+                        return;
+                    }
+                    setRole(r);
+                    if (r === 'sower') setSowerInitialView(view);
+                }}
+                onBack={() => setCampaign(null)}
+                onNavigate={handleNavigate}
+                onLoginClick={() => setShowLogin(true)}
+                seeds={seeds}
+                groups={groups}
+            />
+        );
     }
 
     const isReadOnly = campaign.status !== 'active';
@@ -123,15 +595,14 @@ function App() {
     // 3. Views
     if (role === 'coordinator') {
         return (
-            <CoordinatorView
-                db={db} appId={appId} campaignId={campaign.id}
-                seeds={seeds} groups={groups} logs={logs}
-                storage={storage}
-                onResetRole={() => setRole(null)}
-                isReadOnly={isReadOnly}
-                isOnline={isOnline}
-                pendingCount={pendingCount}
-                saveToQueue={saveToQueue}
+            <CampaignManager
+                db={db} appId={appId} user={user}
+                isSuperAdmin={isSuperAdmin}
+                initialCampaignId={campaign.id}
+                onBack={() => setRole(null)}
+                onNavigate={handleNavigate}
+                campaign={campaign}
+                role={role}
             />
         );
     }
@@ -140,13 +611,17 @@ function App() {
         return (
             <SowerView
                 db={db} appId={appId} campaignId={campaign.id}
-                seeds={seeds} groups={groups} userId={user?.uid}
+                seeds={seeds} groups={groups} userId={user?.uid} userProfile={userProfile}
                 storage={storage}
                 onResetRole={() => setRole(null)}
                 isReadOnly={isReadOnly}
                 isOnline={isOnline}
                 pendingCount={pendingCount}
                 saveToQueue={saveToQueue}
+                initialView={sowerInitialView}
+                onNavigate={handleNavigate}
+                campaign={campaign}
+                role={role}
             />
         );
     }
