@@ -7,23 +7,28 @@ import {
     fetchSignInMethodsForEmail,
     sendPasswordResetEmail,
     sendEmailVerification,
-    linkWithCredential
+    linkWithCredential,
+    sendSignInLinkToEmail
 } from '../firebase';
 import {
     signInWithEmailAndPassword,
     createUserWithEmailAndPassword,
     GoogleAuthProvider as GoogleAuth
 } from 'firebase/auth';
+import { validatePassword, getStrengthLabel } from '../utils/auth-utils';
+import { Eye, EyeOff, Check, X, Mail } from 'lucide-react';
 
 const LoginScreen = ({ onLoginSuccess }) => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
     const [isRegistering, setIsRegistering] = useState(false);
     const [isForgotPassword, setIsForgotPassword] = useState(false);
     const [error, setError] = useState('');
     const [message, setMessage] = useState('');
     const [loading, setLoading] = useState(false);
-    const [linkAccountMode, setLinkAccountMode] = useState(null); // 'google-to-email' | 'email-to-google'
+    const [showPassword, setShowPassword] = useState(false);
+    const [passwordError, setPasswordError] = useState(null);
 
     const handleGoogleLogin = async () => {
         setLoading(true);
@@ -64,23 +69,39 @@ const LoginScreen = ({ onLoginSuccess }) => {
         setMessage('');
         try {
             if (isRegistering) {
-                // Check if already exists with Google (Scenario 3)
-                const methods = await fetchSignInMethodsForEmail(auth, email);
-                if (methods.includes('google.com')) {
-                    setError('Ya existe una cuenta con Google para este correo. Por favor, inicia sesión con Google.');
+                if (password !== confirmPassword) {
+                    setError('Las contraseñas no coinciden.');
                     setLoading(false);
                     return;
                 }
-
-                const result = await createUserWithEmailAndPassword(auth, email, password);
-                await sendEmailVerification(result.user);
-                setMessage('Cuenta creada. Por favor, revisa tu correo para verificar tu cuenta antes de entrar.');
-                // We don't call onLoginSuccess yet because they need to verify
-                setIsRegistering(false);
+                const validation = validatePassword(password);
+                if (!validation.isValid) {
+                    setError('La contraseña no cumple los requisitos de seguridad.');
+                    setLoading(false);
+                    return;
+                }
+                try {
+                    const result = await createUserWithEmailAndPassword(auth, email, password);
+                    await sendEmailVerification(result.user);
+                    setMessage('Cuenta creada. Por favor, revisa tu correo para verificar tu cuenta antes de entrar.');
+                    setIsRegistering(false);
+                } catch (err) {
+                    if (err.code === 'auth/email-already-in-use') {
+                        setError('Este correo ya está registrado. Por favor, inicia sesión con tu contraseña o con Google si vinculaste tu cuenta.');
+                        setIsRegistering(false); // Sugerimos ir a login
+                    } else if (err.code === 'auth/weak-password') {
+                        setError('La contraseña es demasiado débil. Usa al menos 6 caracteres.');
+                    } else if (err.code === 'auth/invalid-email') {
+                        setError('El correo electrónico no es válido.');
+                    } else {
+                        throw err;
+                    }
+                }
             } else {
                 try {
                     const result = await signInWithEmailAndPassword(auth, email, password);
-                    if (!result.user.emailVerified) {
+                    const hasOtherProviders = result.user.providerData.length > 1;
+                    if (!result.user.emailVerified && !hasOtherProviders) {
                         setError('Por favor, verifica tu correo electrónico antes de continuar.');
                         await auth.signOut();
                         setLoading(false);
@@ -88,24 +109,17 @@ const LoginScreen = ({ onLoginSuccess }) => {
                     }
                     onLoginSuccess(result.user);
                 } catch (err) {
-                    if (err.code === 'auth/user-not-found') {
-                        setError('La cuenta no existe. Por favor, regístrate.');
-                        setIsRegistering(true); // Scenario 1
-                    } else if (err.code === 'auth/wrong-password') {
-                        setError('Contraseña incorrecta.');
+                    // Con protección de enumeración activada, Firebase suele devolver 'auth/invalid-credential'
+                    // para cualquier fallo de login (usuario no existe o clave mal).
+                    if (err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
+                        setError('Correo o contraseña incorrectos.');
                     } else {
-                        // Check if only has Google (Scenario 5)
-                        const methods = await fetchSignInMethodsForEmail(auth, email);
-                        if (methods.length > 0 && !methods.includes('password')) {
-                            setError('Esta cuenta usa Google. Inicia sesión con Google primero y luego podrás establecer una contraseña desde tu perfil.');
-                        } else {
-                            setError('Error al iniciar sesión.');
-                        }
+                        throw err;
                     }
                 }
             }
         } catch (err) {
-            setError('Error en la autenticación.');
+            setError('Error en la autenticación. Por favor, reinténtalo.');
             console.error(err);
         } finally {
             setLoading(false);
@@ -123,6 +137,31 @@ const LoginScreen = ({ onLoginSuccess }) => {
             setIsForgotPassword(false);
         } catch (err) {
             setError('Error al enviar el correo de recuperación.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleMagicLink = async (e) => {
+        e.preventDefault();
+        if (!email) {
+            setError('Por favor, introduce tu email primero.');
+            return;
+        }
+        setLoading(true);
+        setError('');
+        setMessage('');
+        try {
+            const actionCodeSettings = {
+                url: window.location.href,
+                handleCodeInApp: true,
+            };
+            await sendSignInLinkToEmail(auth, email, actionCodeSettings);
+            window.localStorage.setItem('emailForSignIn', email);
+            setMessage('¡Enlace enviado! Revisa tu bandeja de entrada para entrar sin contraseña.');
+        } catch (err) {
+            console.error(err);
+            setError('Error al enviar el enlace de acceso.');
         } finally {
             setLoading(false);
         }
@@ -187,16 +226,78 @@ const LoginScreen = ({ onLoginSuccess }) => {
                             required
                         />
                     </div>
-                    <div>
+                    <div className="relative group">
                         <input
-                            type="password"
+                            type={showPassword ? "text" : "password"}
                             placeholder="Contraseña"
                             className="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             required
                         />
+                        <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                        >
+                            {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                        </button>
                     </div>
+
+                    {isRegistering && password.length > 0 && (
+                        <div className="space-y-4 animate-fade-in">
+                            <div className="space-y-3">
+                                <div className="flex justify-between items-center mb-1">
+                                    <div className="flex flex-col">
+                                        <span className="text-xs text-slate-500 font-bold uppercase tracking-wider">Seguridad</span>
+                                        <span className="text-[9px] text-slate-600">Completa todos los requisitos para continuar</span>
+                                    </div>
+                                    <span className={`text-xs font-bold ${getStrengthLabel(validatePassword(password).score).color.replace('bg-', 'text-')}`}>
+                                        {getStrengthLabel(validatePassword(password).score).label}
+                                    </span>
+                                </div>
+                                <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden flex gap-0.5">
+                                    {[...Array(4)].map((_, i) => (
+                                        <div
+                                            key={i}
+                                            className={`h-full flex-1 transition-all duration-500 ${i < validatePassword(password).score ? getStrengthLabel(validatePassword(password).score).color : 'bg-slate-700'
+                                                }`}
+                                        />
+                                    ))}
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 mt-2">
+                                    {validatePassword(password).results.map(res => (
+                                        <div key={res.id} className="flex items-center space-x-2">
+                                            {res.met ? <Check size={12} className="text-emerald-500" /> : <X size={12} className="text-slate-600" />}
+                                            <span className={`text-[10px] ${res.met ? 'text-slate-300' : 'text-slate-500'}`}>{res.label}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="relative group">
+                                <input
+                                    type={showPassword ? "text" : "password"}
+                                    placeholder="Repite tu contraseña"
+                                    className={`w-full bg-slate-900/50 border rounded-xl px-4 py-3 text-white focus:outline-none transition-all ${confirmPassword.length > 0
+                                        ? (password === confirmPassword ? 'border-emerald-500 focus:ring-emerald-500/50' : 'border-red-500 focus:ring-red-500/50')
+                                        : 'border-slate-700 focus:ring-2 focus:ring-emerald-500/50'
+                                        }`}
+                                    value={confirmPassword}
+                                    onChange={(e) => setConfirmPassword(e.target.value)}
+                                    required
+                                />
+                                {confirmPassword.length > 0 && (
+                                    <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                                        {password === confirmPassword
+                                            ? <Check size={18} className="text-emerald-500" />
+                                            : <X size={18} className="text-red-500" />
+                                        }
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
 
                     <div className="text-right">
                         {!isRegistering && (
@@ -213,6 +314,18 @@ const LoginScreen = ({ onLoginSuccess }) => {
                     >
                         {loading ? 'Procesando...' : (isRegistering ? 'Crear Cuenta' : 'Iniciar Sesión')}
                     </button>
+
+                    {!isRegistering && (
+                        <button
+                            type="button"
+                            onClick={handleMagicLink}
+                            disabled={loading}
+                            className="w-full bg-slate-800 hover:bg-slate-700 text-emerald-400 font-semibold py-3 rounded-xl border border-slate-700 transition-all flex items-center justify-center space-x-2"
+                        >
+                            <Mail size={18} />
+                            <span>Entrar sin contraseña (Magic Link)</span>
+                        </button>
+                    )}
                 </form>
 
                 <div className="relative my-8">

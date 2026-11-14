@@ -88,8 +88,10 @@ const CampaignDashboard = ({
         acc[seed.species].push(seed);
         return acc;
     }, {});
-    const isOwner = user && campaign?.ownerId && user.uid === campaign.ownerId;
-    const canManage = isSuperAdmin || isOwner;
+    const isRealUser = Boolean(user && !user.isAnonymous);
+    const isOwner = Boolean(isRealUser && campaign?.ownerId && user.uid === campaign.ownerId);
+    const isCoordinator = Boolean(isRealUser && campaign?.coordinators?.includes(user.uid));
+    const canManage = Boolean(isSuperAdmin || isOwner || isCoordinator);
     const isActive = campaign.status === 'active';
 
     const formatDate = (date) => {
@@ -108,18 +110,20 @@ const CampaignDashboard = ({
     const isModern = React.useMemo(() => groups.length === 0 || seeds.some(s => s.userAssignments?.length > 0), [groups, seeds]);
 
     const hasPersonalSeeds = React.useMemo(() => {
-        if (!user) return true; // Let them try to login
-        if (isModern) {
-            return seeds.some(s => s.userAssignments?.some(a => a.userId === user.uid));
+        if (!isModern) {
+            return groups.some(g => g.assignedSeeds?.length > 0);
         }
-        // Legacy: if any group has seeds, we allow entering SowerView to pick a group
-        return groups.some(g => g.assignedSeeds?.length > 0);
-    }, [isModern, seeds, groups, user]);
+        if (!isRealUser) return false;
+        return seeds.some(s => !s.deleted && s.userAssignments?.some(a => a.userId === user.uid));
+    }, [isModern, seeds, groups, user, isRealUser]);
 
     const hasPersonalLogs = React.useMemo(() => {
-        if (!user) return false;
-        return logs.some(l => l.userId === user.uid);
-    }, [logs, user]);
+        if (!isModern) return logs.length > 0;
+        if (!isRealUser) return false;
+        return logs.some(l => l.userId === user.uid || l.ownerId === user.uid);
+    }, [logs, user, isRealUser, isModern]);
+
+    const isSowDisabled = (isRealUser || !isModern) && !hasPersonalSeeds;
 
     return (
         <div className="min-h-screen bg-slate-950 text-white font-sans pb-12 overflow-x-hidden">
@@ -428,7 +432,7 @@ const CampaignDashboard = ({
                                                 </div>
                                                 <div className="text-left">
                                                     <h4 className="font-bold text-slate-200 group-hover:text-white transition-colors uppercase text-sm">{log.seedName}</h4>
-                                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{participants.find(p => p.uid === log.userId)?.displayName || log.userName || log.groupName} • {log.holeCount || 1} golpes</p>
+                                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{participants.find(p => p.uid === (log.ownerId || log.userId))?.displayName || log.userName || log.groupName} • {log.holeCount || 1} golpes</p>
                                                 </div>
                                             </div>
                                             <ChevronRight className="text-slate-700 group-hover:text-emerald-500 transition-colors shrink-0" />
@@ -452,20 +456,24 @@ const CampaignDashboard = ({
                         {isActive && (
                             <button
                                 onClick={() => {
-                                    if (user && !hasPersonalSeeds) return;
-                                    user ? onSelectRole('sower', 'form') : onLoginClick();
+                                    if (isSowDisabled) return;
+                                    if (isModern && !isRealUser) {
+                                        onLoginClick();
+                                        return;
+                                    }
+                                    onSelectRole('sower', 'form');
                                 }}
-                                disabled={user && !hasPersonalSeeds}
+                                disabled={isSowDisabled}
                                 className={`group relative p-8 rounded-[2rem] text-slate-950 transition-all flex flex-col justify-between h-56 shadow-xl active:scale-[0.98] 
-                                    ${user && !hasPersonalSeeds
+                                    ${isSowDisabled
                                         ? 'bg-slate-800 opacity-40 grayscale cursor-not-allowed border border-white/5'
                                         : 'bg-emerald-500 hover:bg-emerald-400 shadow-emerald-500/10'}`}
                             >
-                                <PlusCircle size={40} strokeWidth={2.5} className={user && !hasPersonalSeeds ? 'text-slate-600' : ''} />
+                                <PlusCircle size={40} strokeWidth={2.5} className={isSowDisabled ? 'text-slate-600' : ''} />
                                 <div className="text-left w-full">
-                                    <h4 className={`text-2xl font-black uppercase leading-none mb-2 ${user && !hasPersonalSeeds ? 'text-slate-500' : ''}`}>Registrar<br />Siembras</h4>
-                                    <p className={`text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 ${user && !hasPersonalSeeds ? 'text-slate-600' : 'text-slate-950/60'}`}>
-                                        {user && !hasPersonalSeeds ? (
+                                    <h4 className={`text-2xl font-black uppercase leading-none mb-2 ${isSowDisabled ? 'text-slate-500' : ''}`}>Registrar<br />Siembras</h4>
+                                    <p className={`text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 ${isSowDisabled ? 'text-slate-600' : 'text-slate-950/60'}`}>
+                                        {isSowDisabled ? (
                                             <>Sin semillas asignadas <Info size={14} /></>
                                         ) : (
                                             <>Empezar ahora <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" /></>
@@ -476,7 +484,7 @@ const CampaignDashboard = ({
                         )}
 
                         {/* History Shortcut */}
-                        {user && (
+                        {(isRealUser || !isModern) && (
                             <button
                                 onClick={() => {
                                     if (!hasPersonalLogs) return;
@@ -590,7 +598,7 @@ const CampaignDashboard = ({
                                     <div className="grid grid-cols-2 gap-6">
                                         <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
                                             <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Sembrador</p>
-                                            <p className="text-sm font-bold text-white">{participants.find(p => p.uid === selectedLog.userId)?.displayName || selectedLog.userName || selectedLog.groupName || 'Anónimo'}</p>
+                                            <p className="text-sm font-bold text-white">{participants.find(p => p.uid === (selectedLog.ownerId || selectedLog.userId))?.displayName || selectedLog.userName || selectedLog.groupName || 'Anónimo'}</p>
                                         </div>
                                         <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
                                             <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Impacto</p>
@@ -704,7 +712,7 @@ const CampaignDashboard = ({
                                                 </div>
                                             </div>
 
-                                            {user && user.uid !== p.uid && (
+                                            {isRealUser && user.uid !== p.uid && (
                                                 <button
                                                     onClick={() => onSocialAction('follow', p.uid)}
                                                     className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${userFollowing.has(p.uid)

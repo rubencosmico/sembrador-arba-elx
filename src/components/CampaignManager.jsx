@@ -2,14 +2,15 @@ import React, { useState, useEffect } from 'react';
 import {
     collection, query, orderBy, onSnapshot, addDoc,
     serverTimestamp, updateDoc, doc, where, getDocs,
-    deleteDoc, writeBatch
+    deleteDoc, writeBatch, or, arrayUnion, arrayRemove
 } from 'firebase/firestore';
 import {
     PlusCircle, Power, Edit2, Check, X, ArrowLeft,
     Calendar, Globe, Lock, Link as LinkIcon, Users,
     Package, ArrowRight, UserPlus, Camera, Trash2,
     Download, Search, Table as TableIcon, Map as MapIcon,
-    ChevronLeft, ChevronRight, ArrowUpDown, UploadCloud, Settings
+    ChevronLeft, ChevronRight, ArrowUpDown, UploadCloud, Settings,
+    Crown, ShieldCheck, MapPin
 } from 'lucide-react';
 import { compressImage } from '../utils/imageUtils';
 import { filterAndSortLogs } from '../utils/logUtils';
@@ -80,9 +81,16 @@ const CampaignManager = ({
         if (isSuperAdmin) {
             // Remove orderBy to avoid composite index requirement
             q = query(colRef);
+        } else if (user?.uid) {
+            // Show owned campaigns AND campaigns where user is a coordinator
+            q = query(colRef, or(
+                where('ownerId', '==', user.uid),
+                where('coordinators', 'array-contains', user.uid)
+            ));
         } else {
-            // For regular users, show their owned campaigns
-            q = query(colRef, where('ownerId', '==', user.uid));
+            setAllCampaigns([]);
+            setLoadingCampaigns(false);
+            return;
         }
 
         const unsubscribe = onSnapshot(q, (snap) => {
@@ -105,7 +113,7 @@ const CampaignManager = ({
             isMounted = false;
             unsubscribe();
         };
-    }, [db, appId, user.uid, isSuperAdmin]);
+    }, [db, appId, user?.uid, isSuperAdmin]);
 
     // Load sub-data when a campaign is selected for deep management
     useEffect(() => {
@@ -126,7 +134,7 @@ const CampaignManager = ({
         });
 
         // Logs
-        const qLogs = query(collection(db, ...dataPath, 'logs'), where('campaignId', '==', selectedCampaignId), orderBy('timestamp', 'desc'));
+        const qLogs = query(collection(db, ...dataPath, 'logs'), where('campaignId', '==', selectedCampaignId));
         const unsubLogs = onSnapshot(qLogs, (snap) => {
             if (!isMounted) return;
             setLogs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -234,10 +242,11 @@ const CampaignManager = ({
             .filter(a => a.userId !== userId)
             .reduce((acc, a) => acc + (a.quantity || 0), 0);
 
+        const seedTotalQuantity = seed.totalQuantity ?? seed.quantity ?? 0;
         const totalWithNewAssignment = otherAssignmentsTotal + newQty;
 
-        if (totalWithNewAssignment > seed.totalQuantity) {
-            const available = seed.totalQuantity - otherAssignmentsTotal;
+        if (totalWithNewAssignment > seedTotalQuantity) {
+            const available = seedTotalQuantity - otherAssignmentsTotal;
             alert(`No puedes asignar ${newQty} semillas. Solo quedan ${available} disponibles en este lote.`);
             return;
         }
@@ -257,10 +266,24 @@ const CampaignManager = ({
         }
     };
 
+    const toggleCoordinator = async (campId, userId) => {
+        const camp = allCampaigns.find(c => c.id === campId);
+        if (!camp || (user?.uid !== camp.ownerId && !isSuperAdmin)) return;
+
+        const isCoord = camp.coordinators?.includes(userId);
+        try {
+            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'campaigns', campId), {
+                coordinators: isCoord ? arrayRemove(userId) : arrayUnion(userId)
+            });
+        } catch (e) {
+            console.error("Error toggling coordinator:", e);
+        }
+    };
+
     const handleDeleteCampaign = async (campId) => {
         const camp = allCampaigns.find(c => c.id === campId);
-        if (!camp || user.uid !== camp.ownerId) {
-            alert("Solo el propietario puede borrar la jornada.");
+        if (!camp || (user?.uid !== camp.ownerId && !isSuperAdmin)) {
+            alert("Solo el propietario o un administrador puede borrar la jornada.");
             return;
         }
 
@@ -337,6 +360,15 @@ const CampaignManager = ({
             orientations: Array.from(options.orientations).sort()
         };
     }, [logs, campSeeds]);
+
+    const handleSort = (field) => {
+        if (sortField === field) {
+            setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
+        } else {
+            setSortField(field);
+            setSortDirection('asc');
+        }
+    };
 
     const filteredAndSortedLogs = React.useMemo(() => {
         const cumulativeFiltered = logs.filter(log => {
@@ -495,7 +527,7 @@ const CampaignManager = ({
                                     </div>
 
                                     {/* Danger Zone */}
-                                    {user?.uid === camp?.ownerId && (
+                                    {(user?.uid === camp?.ownerId || isSuperAdmin) && (
                                         <div className="pt-8 border-t border-red-500/20">
                                             <div className="bg-red-500/5 p-8 rounded-[2rem] border border-red-500/20 space-y-4">
                                                 <div className="flex items-center gap-3 text-red-500">
@@ -537,23 +569,47 @@ const CampaignManager = ({
                                     </div>
 
                                     <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 no-scrollbar">
-                                        {participants.map(p => (
-                                            <div key={p.uid} className="flex items-center gap-3 bg-slate-800/50 p-3 rounded-2xl border border-white/5">
-                                                <div className="shrink-0">
-                                                    {p.photoURL ? (
-                                                        <img src={p.photoURL} className="w-10 h-10 rounded-xl" alt="" />
-                                                    ) : (
-                                                        <div className="w-10 h-10 rounded-xl bg-slate-700 flex items-center justify-center text-xs font-black">
-                                                            {p.displayName?.charAt(0)}
+                                        {participants.map(p => {
+                                            const isOwner = p.uid === camp.ownerId;
+                                            const isCoordinator = camp.coordinators?.includes(p.uid);
+
+                                            return (
+                                                <div key={p.uid} className="flex items-center gap-3 bg-slate-800/50 p-3 rounded-2xl border border-white/5">
+                                                    <div className="shrink-0 relative">
+                                                        {p.photoURL ? (
+                                                            <img src={p.photoURL} className="w-10 h-10 rounded-xl" alt="" />
+                                                        ) : (
+                                                            <div className="w-10 h-10 rounded-xl bg-slate-700 flex items-center justify-center text-xs font-black">
+                                                                {p.displayName?.charAt(0)}
+                                                            </div>
+                                                        )}
+                                                        {isOwner && (
+                                                            <div className="absolute -top-1 -right-1 bg-amber-500 text-slate-950 p-1 rounded-full border border-slate-900 shadow-lg">
+                                                                <ShieldCheck size={8} strokeWidth={3} />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-2">
+                                                            <p className="text-sm font-bold truncate">{p.displayName}</p>
+                                                            {isCoordinator && <Crown size={12} className="text-amber-400 fill-amber-400" />}
                                                         </div>
+                                                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                                                            {isOwner ? 'Propietario' : isCoordinator ? 'Coordinador' : 'Sembrador Activo'}
+                                                        </p>
+                                                    </div>
+                                                    {(user?.uid === camp.ownerId || isSuperAdmin) && !isOwner && (
+                                                        <button
+                                                            onClick={() => toggleCoordinator(camp.id, p.uid)}
+                                                            className={`p-2 rounded-lg transition-all ${isCoordinator ? 'bg-amber-500/10 text-amber-500' : 'bg-white/5 text-slate-500 hover:text-white hover:bg-white/10'}`}
+                                                            title={isCoordinator ? "Quitar como coordinador" : "Nombrar coordinador"}
+                                                        >
+                                                            <Crown size={16} fill={isCoordinator ? "currentColor" : "none"} />
+                                                        </button>
                                                     )}
                                                 </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <p className="text-sm font-bold truncate">{p.displayName}</p>
-                                                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Sembrador Activo</p>
-                                                </div>
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                         {participants.length === 0 && (
                                             <div className="text-center py-8">
                                                 <Users size={32} className="mx-auto text-slate-700 mb-2" />
@@ -640,8 +696,9 @@ const CampaignManager = ({
                             <section className="lg:col-span-2 space-y-6">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                     {campSeeds.filter(s => !s.deleted).map(seed => {
+                                        const seedTotalQuantity = seed.totalQuantity ?? seed.quantity ?? 0;
                                         const totalAssigned = seed.userAssignments?.reduce((acc, a) => acc + (a.quantity || 0), 0) || 0;
-                                        const remaining = seed.totalQuantity - totalAssigned;
+                                        const remaining = seedTotalQuantity - totalAssigned;
 
                                         return (
                                             <div key={seed.id} className="bg-white/5 p-6 rounded-[2.5rem] border border-white/10 flex flex-col h-full shadow-lg">
@@ -673,7 +730,7 @@ const CampaignManager = ({
                                                     <div className="flex items-center justify-between mb-2">
                                                         <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Distribución por Sembrador:</p>
                                                         <div className="flex gap-2">
-                                                            <span className="text-[9px] font-black text-slate-500 bg-white/5 px-2 py-1 rounded-lg uppercase tracking-widest">{seed.totalQuantity} TOTAL</span>
+                                                            <span className="text-[9px] font-black text-slate-500 bg-white/5 px-2 py-1 rounded-lg uppercase tracking-widest">{seedTotalQuantity} TOTAL</span>
                                                             <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase tracking-widest ${remaining <= 0 ? 'bg-red-500/10 text-red-500' : 'bg-emerald-500/10 text-emerald-500'}`}>
                                                                 {remaining} RESTANTES
                                                             </span>
@@ -870,7 +927,7 @@ const CampaignManager = ({
                                                             <td className="p-4 text-slate-400 font-mono text-[11px]">
                                                                 {log.timestamp?.seconds ? new Date(log.timestamp.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
                                                             </td>
-                                                            <td className="p-4 text-emerald-100">{participants.find(p => p.uid === log.userId)?.displayName || log.userName || log.groupName || 'Anónimo'}</td>
+                                                            <td className="p-4 text-emerald-100">{participants.find(p => p.uid === (log.ownerId || log.userId))?.displayName || log.userName || log.groupName || 'Anónimo'}</td>
                                                             <td className="p-4 text-slate-300 italic">{log.seedName}</td>
                                                             <td className="p-4 text-white">{log.holeCount || 1}</td>
                                                         </tr>

@@ -16,6 +16,8 @@ vi.mock('firebase/firestore', async () => {
         query: vi.fn(),
         onSnapshot: vi.fn(),
         where: vi.fn(),
+        and: vi.fn(),
+        or: vi.fn(),
         orderBy: vi.fn(),
         limit: vi.fn(),
         serverTimestamp: () => 'MOCK_TIMESTAMP'
@@ -46,11 +48,13 @@ describe('SowerView Integration', () => {
     beforeEach(() => {
         vi.clearAllMocks();
 
-        // Configurar comportamiento por defecto de onSnapshot (para evitar errores al montar)
+        // Configurar comportamiento por defecto de onSnapshot, getDocs y addDoc
         firestore.onSnapshot.mockImplementation((query, callback) => {
             callback({ forEach: () => { } }); // Snapshot vacío inicial
             return () => { }; // Unsubscribe function
         });
+        firestore.getDocs.mockResolvedValue({ docs: [], empty: true });
+        firestore.addDoc.mockResolvedValue({ id: 'mock-log-1' });
     });
 
     it('allows selecting a group and submitting a sowing log', async () => {
@@ -106,6 +110,7 @@ describe('SowerView Integration', () => {
             groupName: 'Equipo Alpha',
             seedName: 'Encina',
             userId: mockUserId,
+            ownerId: mockUserId,
             holeCount: 2
         });
     });

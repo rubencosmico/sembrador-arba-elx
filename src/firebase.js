@@ -11,7 +11,15 @@ import {
     sendPasswordResetEmail,
     sendEmailVerification,
     linkWithCredential,
-    EmailAuthCredential
+    linkWithPopup,
+    EmailAuthCredential,
+    reauthenticateWithCredential,
+    updatePassword,
+    signInAnonymously,
+    sendSignInLinkToEmail,
+    isSignInWithEmailLink,
+    signInWithEmailLink,
+    deleteUser
 } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 import { getMessaging } from 'firebase/messaging';
@@ -44,5 +52,8 @@ const messaging = typeof window !== 'undefined' ? getMessaging(app) : null;
 export {
     db, auth, storage, messaging, appId,
     GoogleAuthProvider, EmailAuthProvider, onAuthStateChanged, signOut, signInWithPopup,
-    fetchSignInMethodsForEmail, sendPasswordResetEmail, sendEmailVerification, linkWithCredential
+    fetchSignInMethodsForEmail, sendPasswordResetEmail, sendEmailVerification, linkWithCredential, linkWithPopup,
+    reauthenticateWithCredential, updatePassword,
+    signInAnonymously, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink,
+    deleteUser
 };

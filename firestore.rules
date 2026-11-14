@@ -1,52 +1,695 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Funciones de utilidad
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: admins/{userId}
+    // Fields:
+    //   - email: string (optional)
+    //   - assignedAt: timestamp (optional)
+    //   - assignedBy: string (optional)
+    //
+    // Collection: users/{userId}
+    // Note: Currently stores profile fields alongside email/fcmToken for
+    // SocialView, CampaignDashboard, and CampaignManager compatibility.
+    // Recommended follow-up: split private PII (email, fcmToken) into a
+    // private subcollection so public profiles remain strictly PII-free.
+    // Fields:
+    //   - displayName: string (required, 1..150 chars)
+    //   - defaultRole: string (required, 'sower' on self-create; immutable for non-admins)
+    //   - email: string | null (optional, <= 320 chars; immutable for non-admins)
+    //   - photoURL: string | null (optional, valid http/https URL <= 2048 chars)
+    //   - bio: string | null (optional, <= 1000 chars)
+    //   - website: string | null (optional, '' or valid http/https URL <= 500 chars)
+    //   - instagram: string | null (optional, <= 200 chars)
+    //   - fcmToken: string | null (optional, <= 512 chars)
+    //   - createdAt: timestamp (optional, immutable for non-admins)
+    //
+    // Collection: messages/{messageId}
+    // Fields:
+    //   - senderId: string (required, == request.auth.uid on create)
+    //   - receiverId: string (required, 1..128 chars)
+    //   - type: string (required, 'text' | 'reference')
+    //   - text: string (required for 'text', 1..500 chars)
+    //   - referenceType: string (required for 'reference', 1..50 chars)
+    //   - referenceId: string (required for 'reference', 1..128 chars)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: follows/{followId} (followId == followerId + '_' + followingId)
+    // Fields:
+    //   - followerId: string (required, == request.auth.uid)
+    //   - followingId: string (required, 1..128 chars, != request.auth.uid)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: claimRequests/{requestId}
+    // Fields:
+    //   - userId: string (required, == request.auth.uid on create; immutable)
+    //   - userName: string | null (optional, <= 150 chars)
+    //   - logIds: list (required, 1..500 items; immutable)
+    //   - campaignIds: list (optional on legacy, required on create, <= 100 items; immutable)
+    //   - status: string (required, 'pending' on create, 'pending' | 'approved' | 'rejected')
+    //   - createdAt: timestamp (optional on legacy, required on create; immutable)
+    //
+    // Collection: artifacts/{appId}/public/data/campaigns/{campId}
+    // Fields:
+    //   - name: string (required, 1..200 chars on create, <= 200 on update)
+    //   - description: string | null (optional, <= 2000 chars)
+    //   - status: string (required, 'active' | 'inactive' | 'archived')
+    //   - visibility: string (optional, 'public' | 'private')
+    //   - ownerId: string | null (optional for legacy compat; == request.auth.uid on modern create; immutable)
+    //   - coordinators: list (optional, <= 100 UIDs; owner/admin only)
+    //   - participants: list (optional, <= 1000 UIDs; self-join allowed for non-anonymous users)
+    //   - coordinates: latlng | map | null (optional)
+    //   - createdAt: timestamp (optional on legacy, required on create; immutable)
+    //
+    // Collection: artifacts/{appId}/public/data/seeds/{seedId}
+    // Fields:
+    //   - campaignId: string (required, 1..128 chars; immutable once set)
+    //   - species: string (required, 1..200 chars)
+    //   - provider: string | null (optional, <= 200 chars)
+    //   - treatment: string | null (optional, <= 500 chars)
+    //   - totalQuantity: number (optional, 0..1000000)
+    //   - quantity: number | string | null (optional, legacy compat)
+    //   - photo: string | null (optional, data:image/* or http(s) URL <= 350000 chars)
+    //   - assignedSeeds: list (optional, <= 500 items)
+    //   - userAssignments: list (optional, <= 500 items)
+    //   - deleted: bool (optional)
+    //   - createdAt: timestamp (optional on legacy, required on create; immutable)
+    //
+    // Collection: artifacts/{appId}/public/data/groups/{groupId}
+    // Fields:
+    //   - campaignId: string (required, 1..128 chars; immutable once set)
+    //   - name: string (required, 1..200 chars)
+    //   - assignedSeeds: list (optional, <= 500 items)
+    //   - createdAt: timestamp (optional on legacy, required on create; immutable)
+    //
+    // Collection: artifacts/{appId}/public/data/logs/{logId}
+    // Fields:
+    //   - campaignId: string (required, 1..128 chars; immutable for non-admins)
+    //   - seedId: string | null (required on create, 1..128 chars)
+    //   - seedName: string | null (required on create, 1..200 chars)
+    //   - holeCount: int (required on create, 1..1000)
+    //   - quantity: string | number | null (optional, <= 50 chars or 0..10000)
+    //   - microsite: string | null (optional, <= 100 chars)
+    //   - orientation: string | null (optional, <= 50 chars)
+    //   - withSubstrate: bool | null (optional)
+    //   - withProtector: bool | null (optional)
+    //   - notes: string | null (optional, <= 2000 chars)
+    //   - location: latlng | map | null (optional)
+    //   - photoUrl: string | null (optional, '' | 'PENDING' | http(s) URL <= 2048 chars)
+    //   - syncStatus: string | null (optional, 'synced' | 'pending_photo')
+    //   - groupId: string | null (optional, <= 128 chars)
+    //   - groupName: string | null (optional, <= 150 chars)
+    //   - userId: string | null (required == request.auth.uid on create; immutable for non-admins)
+    //   - ownerId: string | null (optional, null or == request.auth.uid on create; immutable for non-admins)
+    //   - userName: string | null (optional, <= 150 chars)
+    //   - timestamp: timestamp (required on create; immutable for non-admins)
+    //   - updatedAt: timestamp | null (optional)
+    //   - photo, uid: legacy fields preserved read-only on existing docs (deletable, never creatable/editable)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
     function isSignedIn() {
       return request.auth != null;
     }
-    
+
+    function isAnonymous() {
+      return isSignedIn() &&
+             'firebase' in request.auth.token &&
+             'sign_in_provider' in request.auth.token.firebase &&
+             request.auth.token.firebase.sign_in_provider == 'anonymous';
+    }
+
+    function isRealUser() {
+      return isSignedIn() && !isAnonymous();
+    }
+
     function isAdmin() {
-      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+      return isRealUser() &&
+             exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
-    // Seguridad de Admins: Nadie puede escribir aquí desde el cliente
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isRealOwner(userId) {
+      return isRealUser() && request.auth.uid == userId;
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    function validString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isValidUrl(url) {
+      return url is string &&
+             (url.matches("^https://.*") || url.matches("^http://.*"));
+    }
+
+    // ===============================================================
+    // Campaign & Ownership Helpers (Null-Safe)
+    // ===============================================================
+
+    function campaignExists(appId, campaignId) {
+      return campaignId is string &&
+             campaignId.size() > 0 &&
+             exists(/databases/$(database)/documents/artifacts/$(appId)/public/data/campaigns/$(campaignId));
+    }
+
+    function getCampaign(appId, campaignId) {
+      return get(/databases/$(database)/documents/artifacts/$(appId)/public/data/campaigns/$(campaignId)).data;
+    }
+
+    function isLegacyCampaignData(campaign) {
+      return !('ownerId' in campaign) || campaign.ownerId == null;
+    }
+
+    function isLegacyCampaign(appId, campaignId) {
+      return campaignExists(appId, campaignId) &&
+             isLegacyCampaignData(getCampaign(appId, campaignId));
+    }
+
+    function isCampaignDataManager(campaign) {
+      return isLegacyCampaignData(campaign) ||
+             (
+               isRealUser() && (
+                 ('ownerId' in campaign && campaign.ownerId == request.auth.uid) ||
+                 ('coordinators' in campaign &&
+                  campaign.coordinators is list &&
+                  request.auth.uid in campaign.coordinators)
+               )
+             );
+    }
+
+    function isCampaignManager(appId, campaignId) {
+      return isSignedIn() &&
+             campaignExists(appId, campaignId) &&
+             isCampaignDataManager(getCampaign(appId, campaignId));
+    }
+
+    function isLogOwner(logData) {
+      return ('userId' in logData && logData.userId == request.auth.uid) ||
+             ('ownerId' in logData && logData.ownerId != null && logData.ownerId == request.auth.uid);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return data.keys().hasOnly([
+               'displayName', 'email', 'photoURL', 'bio',
+               'website', 'instagram', 'defaultRole', 'fcmToken', 'createdAt'
+             ]) &&
+             data.keys().hasAll(['displayName', 'defaultRole']) &&
+             validString(data.displayName, 1, 150) &&
+             data.defaultRole in ['sower', 'coordinator', 'admin'] &&
+             (!('email' in data) || data.email == null || (data.email is string && data.email.size() <= 320)) &&
+             (!('photoURL' in data) || data.photoURL == null || data.photoURL == '' || (isValidUrl(data.photoURL) && data.photoURL.size() <= 2048)) &&
+             (!('bio' in data) || data.bio == null || (data.bio is string && data.bio.size() <= 1000)) &&
+             (!('website' in data) || data.website == null || data.website == '' || (isValidUrl(data.website) && data.website.size() <= 500)) &&
+             (!('instagram' in data) || data.instagram == null || (data.instagram is string && data.instagram.size() <= 200)) &&
+             (!('fcmToken' in data) || data.fcmToken == null || (data.fcmToken is string && data.fcmToken.size() <= 512)) &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidMessage(data) {
+      return data.keys().hasOnly([
+               'senderId', 'receiverId', 'text', 'type',
+               'referenceType', 'referenceId', 'createdAt'
+             ]) &&
+             data.keys().hasAll(['senderId', 'receiverId', 'type', 'createdAt']) &&
+             data.senderId is string &&
+             data.senderId == request.auth.uid &&
+             validString(data.receiverId, 1, 128) &&
+             data.type in ['text', 'reference'] &&
+             data.createdAt is timestamp &&
+             (
+               (data.type == 'text' && 'text' in data && validString(data.text, 1, 500)) ||
+               (data.type == 'reference' &&
+                'referenceType' in data && validString(data.referenceType, 1, 50) &&
+                'referenceId' in data && validString(data.referenceId, 1, 128) &&
+                (!('text' in data) || data.text == null || (data.text is string && data.text.size() <= 500)))
+             );
+    }
+
+    function isValidFollow(data, followId) {
+      return data.keys().hasOnly(['followerId', 'followingId', 'createdAt']) &&
+             data.keys().hasAll(['followerId', 'followingId', 'createdAt']) &&
+             data.followerId is string &&
+             data.followerId == request.auth.uid &&
+             validString(data.followingId, 1, 128) &&
+             data.followingId != request.auth.uid &&
+             followId == (request.auth.uid + '_' + data.followingId) &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidClaimRequest(data) {
+      return data.keys().hasOnly([
+               'userId', 'userName', 'logIds', 'campaignIds', 'status', 'createdAt'
+             ]) &&
+             data.keys().hasAll(['userId', 'logIds', 'status']) &&
+             validString(data.userId, 1, 128) &&
+             (!('userName' in data) || data.userName == null || (data.userName is string && data.userName.size() <= 150)) &&
+             data.logIds is list && data.logIds.size() >= 1 && data.logIds.size() <= 500 &&
+             (!('campaignIds' in data) || (data.campaignIds is list && data.campaignIds.size() <= 100)) &&
+             data.status in ['pending', 'approved', 'rejected'] &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidCoordinates(coords) {
+      return coords == null ||
+             coords is latlng ||
+             (
+               coords is map &&
+               coords.keys().hasOnly(['lat', 'lng', 'latitude', 'longitude']) &&
+               (!('lat' in coords) || coords.lat == null || coords.lat is number) &&
+               (!('lng' in coords) || coords.lng == null || coords.lng is number) &&
+               (!('latitude' in coords) || coords.latitude == null || coords.latitude is number) &&
+               (!('longitude' in coords) || coords.longitude == null || coords.longitude is number)
+             );
+    }
+
+    function isValidCampaign(data) {
+      return data.keys().hasOnly([
+               'name', 'description', 'createdAt', 'status', 'visibility',
+               'ownerId', 'coordinators', 'participants', 'coordinates'
+             ]) &&
+             data.keys().hasAll(['name', 'status']) &&
+             data.name is string && data.name.size() <= 200 &&
+             (!('description' in data) || data.description == null || (data.description is string && data.description.size() <= 2000)) &&
+             data.status in ['active', 'inactive', 'archived'] &&
+             (!('visibility' in data) || data.visibility in ['public', 'private']) &&
+             (!('ownerId' in data) || data.ownerId == null || validString(data.ownerId, 1, 128)) &&
+             (!('coordinators' in data) || (data.coordinators is list && data.coordinators.size() <= 100)) &&
+             (!('participants' in data) || (data.participants is list && data.participants.size() <= 1000)) &&
+             (!('coordinates' in data) || isValidCoordinates(data.coordinates)) &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidSelfJoin(newData, oldData) {
+      return isRealUser() &&
+             newData.diff(oldData).affectedKeys().hasOnly(['participants']) &&
+             newData.participants is list &&
+             newData.participants.size() <= 1000 &&
+             request.auth.uid in newData.participants &&
+             (
+               (
+                 (!('participants' in oldData) || oldData.participants == null) &&
+                 newData.participants.size() == 1
+               ) ||
+               (
+                 'participants' in oldData &&
+                 oldData.participants is list &&
+                 newData.participants.hasAll(oldData.participants) &&
+                 (
+                   (request.auth.uid in oldData.participants &&
+                    newData.participants.size() == oldData.participants.size()) ||
+                   (!(request.auth.uid in oldData.participants) &&
+                    newData.participants.size() == oldData.participants.size() + 1)
+                 )
+               )
+             );
+    }
+
+    function isValidSeed(data) {
+      return data.keys().hasOnly([
+               'campaignId', 'species', 'provider', 'treatment',
+               'totalQuantity', 'quantity', 'photo', 'assignedSeeds',
+               'userAssignments', 'deleted', 'createdAt'
+             ]) &&
+             data.keys().hasAll(['campaignId', 'species']) &&
+             validString(data.campaignId, 1, 128) &&
+             validString(data.species, 1, 200) &&
+             (!('provider' in data) || data.provider == null || (data.provider is string && data.provider.size() <= 200)) &&
+             (!('treatment' in data) || data.treatment == null || (data.treatment is string && data.treatment.size() <= 500)) &&
+             (!('totalQuantity' in data) || (data.totalQuantity is number && data.totalQuantity >= 0 && data.totalQuantity <= 1000000)) &&
+             (!('quantity' in data) || data.quantity == null || (data.quantity is string && data.quantity.size() <= 50) || (data.quantity is number && data.quantity >= 0 && data.quantity <= 1000000)) &&
+             (!('photo' in data) || data.photo == null || data.photo == '' || (data.photo is string && data.photo.size() <= 350000 && (data.photo.matches("^data:image/.*") || isValidUrl(data.photo)))) &&
+             (!('assignedSeeds' in data) || (data.assignedSeeds is list && data.assignedSeeds.size() <= 500)) &&
+             (!('userAssignments' in data) || (data.userAssignments is list && data.userAssignments.size() <= 500)) &&
+             (!('deleted' in data) || data.deleted is bool) &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidGroup(data) {
+      return data.keys().hasOnly([
+               'campaignId', 'name', 'assignedSeeds', 'createdAt'
+             ]) &&
+             data.keys().hasAll(['campaignId', 'name']) &&
+             validString(data.campaignId, 1, 128) &&
+             validString(data.name, 1, 200) &&
+             (!('assignedSeeds' in data) || (data.assignedSeeds is list && data.assignedSeeds.size() <= 500)) &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidLocation(loc) {
+      return loc == null ||
+             loc is latlng ||
+             (
+               loc is map &&
+               loc.keys().hasOnly(['lat', 'lng', 'acc', 'latitude', 'longitude']) &&
+               (!('lat' in loc) || loc.lat == null || loc.lat is number) &&
+               (!('lng' in loc) || loc.lng == null || loc.lng is number) &&
+               (!('acc' in loc) || loc.acc == null || loc.acc is number) &&
+               (!('latitude' in loc) || loc.latitude == null || loc.latitude is number) &&
+               (!('longitude' in loc) || loc.longitude == null || loc.longitude is number)
+             );
+    }
+
+    function isValidLogCommon(data) {
+      return (!('campaignId' in data) || validString(data.campaignId, 1, 128)) &&
+             (!('seedId' in data) || data.seedId == null || validString(data.seedId, 1, 128)) &&
+             (!('seedName' in data) || data.seedName == null || validString(data.seedName, 1, 200)) &&
+             (!('holeCount' in data) || (data.holeCount is int && data.holeCount >= 1 && data.holeCount <= 1000)) &&
+             (!('quantity' in data) || data.quantity == null || (data.quantity is string && data.quantity.size() <= 50) || (data.quantity is number && data.quantity >= 0 && data.quantity <= 10000)) &&
+             (!('microsite' in data) || data.microsite == null || (data.microsite is string && data.microsite.size() <= 100)) &&
+             (!('orientation' in data) || data.orientation == null || (data.orientation is string && data.orientation.size() <= 50)) &&
+             (!('withSubstrate' in data) || data.withSubstrate == null || data.withSubstrate is bool) &&
+             (!('withProtector' in data) || data.withProtector == null || data.withProtector is bool) &&
+             (!('notes' in data) || data.notes == null || (data.notes is string && data.notes.size() <= 2000)) &&
+             (!('location' in data) || isValidLocation(data.location)) &&
+             (!('photoUrl' in data) || data.photoUrl == null || data.photoUrl == '' || data.photoUrl == 'PENDING' || (isValidUrl(data.photoUrl) && data.photoUrl.size() <= 2048)) &&
+             (!('syncStatus' in data) || data.syncStatus == null || data.syncStatus in ['synced', 'pending_photo']) &&
+             (!('groupId' in data) || data.groupId == null || (data.groupId is string && data.groupId.size() <= 128)) &&
+             (!('groupName' in data) || data.groupName == null || (data.groupName is string && data.groupName.size() <= 150)) &&
+             (!('userId' in data) || data.userId == null || validString(data.userId, 1, 128)) &&
+             (!('ownerId' in data) || data.ownerId == null || validString(data.ownerId, 1, 128)) &&
+             (!('userName' in data) || data.userName == null || (data.userName is string && data.userName.size() <= 150)) &&
+             (!('timestamp' in data) || data.timestamp is timestamp) &&
+             (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is timestamp);
+    }
+
+    function isValidLogCreate(data) {
+      return data.keys().hasOnly([
+               'campaignId', 'seedId', 'seedName', 'holeCount', 'quantity',
+               'microsite', 'orientation', 'withSubstrate', 'withProtector',
+               'notes', 'location', 'photoUrl', 'syncStatus', 'groupId',
+               'groupName', 'userId', 'ownerId', 'userName', 'timestamp'
+             ]) &&
+             data.keys().hasAll(['campaignId', 'seedId', 'seedName', 'holeCount', 'userId', 'timestamp']) &&
+             validString(data.campaignId, 1, 128) &&
+             validString(data.seedId, 1, 128) &&
+             validString(data.seedName, 1, 200) &&
+             data.holeCount is int && data.holeCount >= 1 && data.holeCount <= 1000 &&
+             data.userId is string && data.userId == request.auth.uid &&
+             (!('ownerId' in data) || data.ownerId == null || data.ownerId == request.auth.uid) &&
+             data.timestamp is timestamp &&
+             isValidLogCommon(data);
+    }
+
+    function isValidLogUpdate(newData, oldData) {
+      return newData.keys().hasOnly([
+               'campaignId', 'seedId', 'seedName', 'holeCount', 'quantity',
+               'microsite', 'orientation', 'withSubstrate', 'withProtector',
+               'notes', 'location', 'photoUrl', 'syncStatus', 'groupId',
+               'groupName', 'userId', 'ownerId', 'userName', 'timestamp',
+               'updatedAt', 'photo', 'uid'
+             ]) &&
+             (!('campaignId' in oldData) || ('campaignId' in newData && validString(newData.campaignId, 1, 128))) &&
+             (!('seedId' in oldData) || ('seedId' in newData && (newData.seedId == null || validString(newData.seedId, 1, 128)))) &&
+             (!('seedName' in oldData) || ('seedName' in newData && (newData.seedName == null || validString(newData.seedName, 1, 200)))) &&
+             (!('holeCount' in oldData) || ('holeCount' in newData && newData.holeCount is int && newData.holeCount >= 1 && newData.holeCount <= 1000)) &&
+             (!('photo' in newData) || ('photo' in oldData && newData.photo == oldData.photo)) &&
+             (!('uid' in newData) || ('uid' in oldData && newData.uid == oldData.uid)) &&
+             isValidLogCommon(newData);
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    // Admins allowlist: users can check their own admin status; no client writes
     match /admins/{userId} {
-      allow read: if isSignedIn();
-      allow write: if false; 
+      allow read: if isRealOwner(userId) || isAdmin();
+      allow write: if false;
     }
 
-    // Perfiles de usuario: Solo el dueño puede editar su perfil
+    // User profiles: readable by signed-in users (SocialView/CampaignDashboard/CampaignManager);
+    // writes restricted to non-anonymous owner or admin with strict schema & role lockdown
     match /users/{userId} {
       allow read: if isSignedIn();
-      allow write: if isSignedIn() && request.auth.uid == userId;
+
+      allow create: if request.resource != null &&
+                    isValidUser(request.resource.data) &&
+                    (
+                      isAdmin() ||
+                      (isRealOwner(userId) && request.resource.data.defaultRole == 'sower')
+                    );
+
+      allow update: if request.resource != null &&
+                    resource != null &&
+                    isValidUser(request.resource.data) &&
+                    (
+                      isAdmin() ||
+                      (
+                        isRealOwner(userId) &&
+                        areImmutableFieldsUnchanged(['defaultRole', 'email', 'createdAt'])
+                      )
+                    );
+
+      allow delete: if isRealOwner(userId) || isAdmin();
     }
 
-    // Mensajes: Solo participantes pueden leer/escribir
+    // Direct messages: only authenticated non-anonymous sender or receiver can read;
+    // sender can create up to 500 chars; messages are immutable once sent
     match /messages/{messageId} {
-      allow read: if isSignedIn() && (request.auth.uid == resource.data.senderId || request.auth.uid == resource.data.receiverId);
-      allow create: if isSignedIn() && request.auth.uid == request.resource.data.senderId;
-      allow update, delete: if false; 
+      allow read: if isRealUser() &&
+                  resource != null &&
+                  (resource.data.senderId == request.auth.uid ||
+                   resource.data.receiverId == request.auth.uid);
+
+      allow create: if isRealUser() &&
+                    request.resource != null &&
+                    isValidMessage(request.resource.data);
+
+      allow update, delete: if false;
     }
 
-    // Seguidores
+    // Social follows graph: non-anonymous users manage only their own follow edges
     match /follows/{followId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && (request.auth.uid == request.resource.data.followerId || request.auth.uid == resource.data.followerId);
+      allow read: if isRealUser();
+
+      allow create: if isRealUser() &&
+                    request.resource != null &&
+                    isValidFollow(request.resource.data, followId);
+
+      allow update: if isRealUser() &&
+                    request.resource != null &&
+                    resource != null &&
+                    resource.data.followerId == request.auth.uid &&
+                    areImmutableFieldsUnchanged(['followerId', 'followingId']) &&
+                    isValidFollow(request.resource.data, followId);
+
+      allow delete: if isRealUser() &&
+                    resource != null &&
+                    resource.data.followerId == request.auth.uid;
     }
 
-    // Reclamaciones
+    // Historical log claim requests: owner or admin reads; real user creates pending request; admin approves/rejects
     match /claimRequests/{requestId} {
-      allow read: if isSignedIn() && (request.auth.uid == resource.data.userId || isAdmin());
-      allow create: if isSignedIn() && request.auth.uid == request.resource.data.userId;
-      allow update: if isAdmin();
+      allow read: if resource != null &&
+                  (isRealOwner(resource.data.userId) || isAdmin());
+
+      allow create: if isRealUser() &&
+                    request.resource != null &&
+                    request.resource.data.userId == request.auth.uid &&
+                    request.resource.data.status == 'pending' &&
+                    hasRequiredFields(['campaignIds', 'createdAt']) &&
+                    isValidClaimRequest(request.resource.data);
+
+      allow update: if isAdmin() &&
+                    request.resource != null &&
+                    resource != null &&
+                    isValidClaimRequest(request.resource.data) &&
+                    areImmutableFieldsUnchanged(['userId', 'logIds', 'campaignIds', 'createdAt']);
+
+      allow delete: if false;
     }
 
-    // REGLA TEMPORAL DE DIAGNÓSTICO: Permitir leer todo en artifacts
-    match /artifacts/{appId}/{allPaths=**} {
-      allow read: if true;
-      allow write: if isSignedIn();
+    // ===============================================================
+    // Campaign Artifacts Structure (/artifacts/{appId}/public/data/*)
+    // ===============================================================
+
+    match /artifacts/{appId}/public/data/campaigns/{campId} {
+      // Unfiltered LandingPage queries require collection-wide signed-in read access
+      allow read: if isSignedIn();
+
+      // Create: real users with own ownerId (or admin), or signed-in legacy create without ownerId
+      allow create: if isSignedIn() &&
+                    request.resource != null &&
+                    isValidCampaign(request.resource.data) &&
+                    request.resource.data.name.size() >= 1 &&
+                    'createdAt' in request.resource.data &&
+                    (
+                      isAdmin() ||
+                      !('ownerId' in request.resource.data) ||
+                      (isRealUser() && request.resource.data.ownerId == request.auth.uid)
+                    );
+
+      // Update: admin, legacy campaign (without ownerId), owner, coordinator (locked down), or self-join (?join=)
+      allow update: if request.resource != null &&
+                    resource != null &&
+                    isValidCampaign(request.resource.data) &&
+                    (
+                      isAdmin() ||
+                      (
+                        isSignedIn() &&
+                        isLegacyCampaignData(resource.data) &&
+                        areImmutableFieldsUnchanged(['ownerId', 'createdAt'])
+                      ) ||
+                      (
+                        isRealUser() &&
+                        'ownerId' in resource.data &&
+                        resource.data.ownerId == request.auth.uid &&
+                        areImmutableFieldsUnchanged(['ownerId', 'createdAt'])
+                      ) ||
+                      (
+                        isRealUser() &&
+                        'coordinators' in resource.data &&
+                        resource.data.coordinators is list &&
+                        request.auth.uid in resource.data.coordinators &&
+                        areImmutableFieldsUnchanged(['ownerId', 'coordinators', 'createdAt'])
+                      ) ||
+                      isValidSelfJoin(request.resource.data, resource.data)
+                    );
+
+      // Delete: admin, owner, or signed-in legacy campaign without ownerId
+      allow delete: if resource != null && (
+                      isAdmin() ||
+                      (isSignedIn() && isLegacyCampaignData(resource.data)) ||
+                      (isRealUser() && 'ownerId' in resource.data && resource.data.ownerId == request.auth.uid)
+                    );
+    }
+
+    match /artifacts/{appId}/public/data/seeds/{seedId} {
+      allow read: if isSignedIn();
+
+      allow create: if request.resource != null &&
+                    isValidSeed(request.resource.data) &&
+                    'createdAt' in request.resource.data &&
+                    (isAdmin() || isCampaignManager(appId, request.resource.data.campaignId));
+
+      allow update: if request.resource != null &&
+                    resource != null &&
+                    isValidSeed(request.resource.data) &&
+                    (
+                      isAdmin() ||
+                      (
+                        (!('campaignId' in resource.data) || request.resource.data.campaignId == resource.data.campaignId) &&
+                        areImmutableFieldsUnchanged(['createdAt']) &&
+                        isCampaignManager(appId, request.resource.data.campaignId)
+                      )
+                    );
+
+      allow delete: if resource != null && (
+                      isAdmin() ||
+                      ('campaignId' in resource.data &&
+                       resource.data.campaignId != null &&
+                       isCampaignManager(appId, resource.data.campaignId))
+                    );
+    }
+
+    match /artifacts/{appId}/public/data/groups/{groupId} {
+      allow read: if isSignedIn();
+
+      allow create: if request.resource != null &&
+                    isValidGroup(request.resource.data) &&
+                    'createdAt' in request.resource.data &&
+                    (isAdmin() || isCampaignManager(appId, request.resource.data.campaignId));
+
+      allow update: if request.resource != null &&
+                    resource != null &&
+                    isValidGroup(request.resource.data) &&
+                    (
+                      isAdmin() ||
+                      (
+                        (!('campaignId' in resource.data) || request.resource.data.campaignId == resource.data.campaignId) &&
+                        areImmutableFieldsUnchanged(['createdAt']) &&
+                        isCampaignManager(appId, request.resource.data.campaignId)
+                      )
+                    );
+
+      allow delete: if resource != null && (
+                      isAdmin() ||
+                      ('campaignId' in resource.data &&
+                       resource.data.campaignId != null &&
+                       isCampaignManager(appId, resource.data.campaignId))
+                    );
+    }
+
+    match /artifacts/{appId}/public/data/logs/{logId} {
+      allow read: if isSignedIn();
+
+      // Create: real users in any existing campaign, or signed-in users in legacy campaigns without ownerId
+      allow create: if request.resource != null &&
+                    isValidLogCreate(request.resource.data) &&
+                    campaignExists(appId, request.resource.data.campaignId) &&
+                    (
+                      isAdmin() ||
+                      isRealUser() ||
+                      (isSignedIn() && isLegacyCampaign(appId, request.resource.data.campaignId))
+                    );
+
+      // Update: admin, log owner (userId or ownerId), or campaign manager (owner/coordinator/legacy)
+      allow update: if request.resource != null &&
+                    resource != null &&
+                    isValidLogUpdate(request.resource.data, resource.data) &&
+                    (
+                      isAdmin() ||
+                      (
+                        areImmutableFieldsUnchanged(['campaignId', 'userId', 'ownerId', 'timestamp']) &&
+                        (
+                          (isRealUser() && isLogOwner(resource.data)) ||
+                          (
+                            'campaignId' in resource.data &&
+                            resource.data.campaignId != null &&
+                            (
+                              (isSignedIn() && isLogOwner(resource.data) && isLegacyCampaign(appId, resource.data.campaignId)) ||
+                              isCampaignManager(appId, resource.data.campaignId)
+                            )
+                          )
+                        )
+                      )
+                    );
+
+      // Delete: admin, log owner (userId or ownerId), or campaign manager (owner/coordinator/legacy)
+      allow delete: if resource != null && (
+                      isAdmin() ||
+                      (isRealUser() && isLogOwner(resource.data)) ||
+                      (
+                        'campaignId' in resource.data &&
+                        resource.data.campaignId != null &&
+                        (
+                          (isSignedIn() && isLogOwner(resource.data) && isLegacyCampaign(appId, resource.data.campaignId)) ||
+                          isCampaignManager(appId, resource.data.campaignId)
+                        )
+                      )
+                    );
+    }
+
+    // Default deny for all unmatched paths
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

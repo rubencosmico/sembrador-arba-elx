@@ -24,12 +24,13 @@ const ClaimRecordsView = ({ db, appId, user, onBack, onNavigate }) => {
                 });
                 setCampaignNames(namesMap);
 
-                // 2. Cargar Logs huérfanos
+                // 2. Cargar Logs huérfanos (sin ownerId o con ownerId nulo)
                 const dataPath = ['artifacts', appId, 'public', 'data', 'logs'];
-                const q = query(collection(db, ...dataPath), where('ownerId', '==', null));
-                const snap = await getDocs(q);
+                const snap = await getDocs(collection(db, ...dataPath));
 
-                const orphans = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                const orphans = snap.docs
+                    .map(d => ({ id: d.id, ...d.data() }))
+                    .filter(log => !log.ownerId);
                 setOrphanLogs(orphans);
             } catch (err) {
                 console.error("[CLAIM] Error al obtener datos:", err);

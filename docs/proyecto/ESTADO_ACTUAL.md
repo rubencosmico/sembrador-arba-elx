@@ -5,30 +5,21 @@
 **Rama de producción (intocable):** `main` (`91b0f14`)
 
 ## 1. Situación General
-- **Fase 1 completada:** Se ha saneado por completo el repositorio Git eliminando las 14 ramas locales y 12 ramas remotas ya integradas en `main`, se actualizó `main` local (`91b0f14`) y se fusionó en `feature/user-management-identity` (`TODO.md` incorporado sin conflictos).
-- Se eliminó `firebase-debug.log` y el componente huérfano `src/components/CampaignSelector.jsx`, se versionó `doc/datos_jornada_hFoDWjxbdbCzFj9rQRh1.csv` y se implantó el sistema de memoria persistente (`GEMINI.md`, `docs/proyecto/*`, `.agents/workflows/cerrar-sesion.md`).
-- **Pendiente de consolidar en Fase 2:** Los cambios de trabajo previos en `src/*`, `firestore.rules`, `storage.rules`, `firebase.json`, `.firebaserc`, `vercel.json` y `src/utils/auth-utils.js` permanecen en el árbol de trabajo listos para corregir los bugs detectados y validar tests y build.
+- **Fase 1 y Fase 2 completadas en local:** El repositorio está saneado (`main` y `feature/user-management-identity` como únicas ramas), todos los bugs bloqueantes y problemas de compatibilidad detectados en la auditoría han sido corregidos, `firestore.rules` ha sido actualizado y validado manualmente contra las consultas de la app mediante `firestore-rules-author`, y tanto la suite Vitest (`7` ficheros, `15` tests) como el build de producción (`vite build`) pasan en local sin errores.
+- **Pendiente de validación en remoto (Fase 3):** Los commits de Fase 1 y Fase 2 residen únicamente en `feature/user-management-identity` local (pendientes de `git push` tras confirmación del usuario). Las reglas de `firestore.rules` y los datos de producción en `arba-elx-siembra` siguen intactos sin desplegar hasta completar las pruebas Preview y la migración de Fase 4.
 
 ## 2. Qué está terminado en `feature/user-management-identity`
-- UI y flujos de login con Google, registro Email/Contraseña con medidor de seguridad (`auth-utils.js`), recuperación de clave y Magic Link.
-- Gestión de perfil (`ProfileView.jsx`) con subida de avatar, vinculación Google ↔ Contraseña y baja de cuenta.
-- Nueva `LandingPage.jsx` con mapa global de jornadas y `CampaignDashboard.jsx` con filtros avanzados.
-- `CampaignManager.jsx` unificado con gestión de participantes, coordinadores, lotes por usuario y borrado seguro de jornadas.
-- Sistema de memoria persistente para agentes y saneamiento completo de ramas Git.
+- UI y flujos completos de autenticación: Google, Email/Contraseña con medidor de seguridad (`auth-utils.js`), verificación de email con envío/reenvío seguro, recuperación de clave, Magic Link y baja/vinculación de proveedores (`ProfileView.jsx`).
+- Aislamiento de sesión anónima (`u.isAnonymous`) para navegación pública en `LandingPage.jsx` y `CampaignDashboard.jsx` sin contaminar `/users` ni solicitar permisos Push innecesarios, junto con recuperación automática de enlaces `?join=` vía `sessionStorage`.
+- `CampaignManager.jsx` estabilizado con ordenación (`handleSort`), mapa GPS (`MapPin`), soporte para lotes legacy (`seed.totalQuantity ?? seed.quantity`), permisos para `ownerId`, `coordinators` e `isSuperAdmin`, y atribución consistente `ownerId || userId`.
+- Reclamación de registros históricos (`ClaimRecordsView.jsx` y `SuperAdminDashboard.jsx`) compatible con logs legacy de `main` (`ownerId` ausente o `null`) y sincronización hacia `userId` + `ownerId`.
+- Consultas sociales y de mensajería alineadas con `firestore.rules` (`MessagesView.jsx`, `ChatWindow.jsx`), y reglas endurecidas en `firestore.rules` (`users`, `campaigns` con self-join, `seeds`/`groups` con `delete` seguro, `logs` hasta 1000 golpes con soporte `ownerId` y compatibilidad legacy).
+- Suite de tests unitarios/integración actualizada (`src/App.test.jsx`, `src/components/SowerView.test.jsx`, `src/components/CampaignManager.test.jsx`).
 
-## 3. Problemas Bloqueantes Pendientes de Resolver antes de pasar a Preview/Main (Fase 2)
-1. **Crashes en tiempo de ejecución:**
-   - `src/App.jsx`: Variables no declaradas (`message`, `setMessage`, `setError`, `sendEmailVerification`) en la pantalla de bloqueo por verificación de email, y falta importar `deleteDoc` para dejar de seguir usuarios.
-   - `src/components/CampaignManager.jsx`: Falta importar `MapPin` de `lucide-react` (rompe al expandir un log con GPS) y falta definir `handleSort` (rompe al ordenar columnas).
-2. **Gestión de sesión anónima vs usuario autenticado:**
-   - `src/App.jsx` crea perfiles `/users/{uid}` y solicita permisos de notificaciones Push para sesiones anónimas (`u.isAnonymous === true`).
-   - `src/components/CampaignDashboard.jsx` evalúa `user` en vez de `user && !user.isAnonymous`, bloqueando el botón "Registrar Siembras" para visitantes no autenticados e ignorando a `campaign.coordinators` en `canManage`.
-3. **Inconsistencia `ownerId` vs `userId` en registros reclamados:**
-   - `SuperAdminDashboard.jsx` actualiza solo `ownerId: userId` al aprobar reclamaciones, pero `SowerView.jsx` y `CampaignDashboard.jsx` filtran "Mi Cuaderno de Campo" por `log.userId === user.uid`.
-4. **Reglas de Firestore (`firestore.rules`) y Consultas:**
-   - `SocialView.jsx` (`list` en `/users`), `MessagesView.jsx` / `ChatWindow.jsx` (query sin filtro `where` en `/messages`), los enlaces `?join=` y el borrado de lotes fallan con las reglas actuales.
-5. **Tests rotos:**
-   - `src/App.test.jsx` y `src/components/CoordinatorView.test.jsx` referencian vistas eliminadas (`CampaignSelector`, `WelcomeScreen`, `CoordinatorView`).
+## 3. Riesgos o Pendientes antes de Pasar a `main`
+- **No desplegar aún `firestore.rules` en Firebase:** Algunas comprobaciones nuevas sobre campos/tamaños deben validarse en entorno de pruebas y coordinarse con la migración de Fase 4 para no interferir con `main` en campo.
+- **Dominio Preview de Vercel:** Tras hacer push de `feature/user-management-identity`, será necesario añadir la URL Preview generada en *Firebase Console → Authentication → Settings → Authorized domains* para probar el login con Google y Magic Link.
+- **Migración de datos históricos (Fase 4):** Sigue pendiente ejecutar el backup JSON local y el script idempotente que asigne `ownerId: 'uo8s4kCGgrZJwXETFtTGThFAATE2'` a las campañas legacy y normalice lotes/logs antiguos antes del merge a `main`.
 
 ## 4. Siguiente Paso Inmediato
-Iniciar la **Fase 2** del `ROADMAP.md`: corregir los crashes y bugs críticos en `src/App.jsx`, `CampaignDashboard.jsx`, `CampaignManager.jsx`, `SuperAdminDashboard.jsx`, `SowerView.jsx`, `MessagesView.jsx` y `ChatWindow.jsx`; actualizar `firestore.rules` (vía `firestore-rules-author`) y `firebase.json`; y actualizar los tests hasta que `npm run test:run` y `npm run build` pasen en verde.
+Iniciar la **Fase 3** del `ROADMAP.md`: tras recibir confirmación del usuario, ejecutar `git push -u origin feature/user-management-identity` para disparar el despliegue Preview en Vercel, autorizar su dominio en Firebase Authentication y realizar las pruebas funcionales de validación.

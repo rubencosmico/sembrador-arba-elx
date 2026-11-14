@@ -20,7 +20,7 @@ const SuperAdminDashboard = ({ db, appId, onBack }) => {
         return () => unsubscribe();
     }, [db]);
 
-    const handleAction = async (requestId, status, logIds, userId, campaignIds = []) => {
+    const handleAction = async (requestId, status, logIds, userId, campaignIds = [], userName = null) => {
         setActioning(true);
         try {
             const batch = writeBatch(db);
@@ -35,7 +35,11 @@ const SuperAdminDashboard = ({ db, appId, onBack }) => {
 
                 // Update log owners
                 logIds.forEach(logId => {
-                    batch.update(doc(db, ...logsPath, logId), { ownerId: userId });
+                    batch.update(doc(db, ...logsPath, logId), {
+                        ownerId: userId,
+                        userId: userId,
+                        ...(userName ? { userName } : {})
+                    });
                 });
 
                 // Get campaign IDs if not provided (fallback for old requests)
@@ -117,7 +121,7 @@ const SuperAdminDashboard = ({ db, appId, onBack }) => {
 
                                 <div className="flex space-x-3">
                                     <button
-                                        onClick={() => handleAction(req.id, 'approved', req.logIds, req.userId, req.campaignIds)}
+                                        onClick={() => handleAction(req.id, 'approved', req.logIds, req.userId, req.campaignIds, req.userName)}
                                         disabled={actioning}
                                         className="flex-1 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white text-sm font-bold py-2 rounded-xl transition-all"
                                     >
@@ -157,7 +161,17 @@ const SuperAdminDashboard = ({ db, appId, onBack }) => {
 
                                 for (const reqDoc of snap.docs) {
                                     const req = reqDoc.data();
-                                    const { userId, logIds, campaignIds } = req;
+                                    const { userId, userName, logIds, campaignIds } = req;
+
+                                    if (logIds?.length > 0) {
+                                        logIds.forEach(logId => {
+                                            batch.update(doc(db, ...logsPath, logId), {
+                                                ownerId: userId,
+                                                userId: userId,
+                                                ...(userName ? { userName } : {})
+                                            });
+                                        });
+                                    }
 
                                     let finalCampaignIds = campaignIds || [];
                                     if (finalCampaignIds.length === 0 && logIds?.length > 0) {

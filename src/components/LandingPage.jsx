@@ -75,7 +75,11 @@ const LandingPage = ({
                 if (isSuperAdmin) return true;
                 const isPublic = !c.visibility || c.visibility === 'public';
                 if (isPublic) return true;
-                if (user && (c.ownerId === user.uid || (c.participants && c.participants.includes(user.uid)))) return true;
+                if (user && (
+                    c.ownerId === user.uid ||
+                    (c.coordinators && c.coordinators.includes(user.uid)) ||
+                    (c.participants && c.participants.includes(user.uid))
+                )) return true;
                 return false;
             });
 
@@ -127,7 +131,7 @@ const LandingPage = ({
                 </div>
 
                 <div className="flex items-center space-x-4 relative">
-                    {user ? (
+                    {user && !user.isAnonymous ? (
                         <>
                             <div
                                 onClick={() => setShowUserMenu(!showUserMenu)}
@@ -264,7 +268,7 @@ const LandingPage = ({
                                 { id: 'finalized', label: 'Finalizadas', color: 'bg-slate-400' },
                                 { id: 'managed', label: 'Gestionadas', color: 'bg-purple-500', auth: true },
                                 { id: 'participated', label: 'Participadas', color: 'bg-blue-500', auth: true }
-                            ].filter(f => !f.auth || user).map(f => (
+                            ].filter(f => !f.auth || (user && !user.isAnonymous)).map(f => (
                                 <button
                                     key={f.id}
                                     onClick={() => setMapFilter(f.id)}
@@ -295,7 +299,7 @@ const LandingPage = ({
                                 if (mapFilter === 'all') return true;
                                 if (mapFilter === 'active') return c.status === 'active';
                                 if (mapFilter === 'finalized') return c.status !== 'active';
-                                if (mapFilter === 'managed') return user && c.ownerId === user.uid;
+                                if (mapFilter === 'managed') return user && (c.ownerId === user.uid || c.coordinators?.includes(user.uid));
                                 if (mapFilter === 'participated') return user && c.participants?.includes(user.uid);
                                 return true;
                             }).map(c => {
@@ -373,7 +377,7 @@ const LandingPage = ({
                             })}
                         </MapContainer>
 
-                        {!user && (
+                        {(!user || user.isAnonymous) && (
                             <div className="absolute inset-x-0 bottom-8 flex justify-center z-[1000]">
                                 <div className="bg-slate-900/90 backdrop-blur-md border border-slate-700 px-6 py-3 rounded-2xl shadow-2xl flex items-center space-x-4">
                                     <span className="text-sm text-slate-300">¿Quieres unirte a una jornada privada?</span>
@@ -392,10 +396,10 @@ const LandingPage = ({
                 {/* List Section */}
                 <div className="space-y-12">
                     {(() => {
-                        const managed = campaigns.filter(c => user && c.ownerId === user.uid);
-                        const participated = campaigns.filter(c => user && c.participants?.includes(user.uid) && c.ownerId !== user.uid);
-                        const activePublic = campaigns.filter(c => c.status === 'active' && !(user && (c.ownerId === user.uid || c.participants?.includes(user.uid))));
-                        const finalized = campaigns.filter(c => c.status !== 'active' && !(user && (c.ownerId === user.uid || c.participants?.includes(user.uid))));
+                        const managed = campaigns.filter(c => user && !user.isAnonymous && c.ownerId === user.uid);
+                        const participated = campaigns.filter(c => user && !user.isAnonymous && c.participants?.includes(user.uid) && c.ownerId !== user.uid);
+                        const activePublic = campaigns.filter(c => c.status === 'active' && !(user && !user.isAnonymous && (c.ownerId === user.uid || c.participants?.includes(user.uid))));
+                        const finalized = campaigns.filter(c => c.status !== 'active' && !(user && !user.isAnonymous && (c.ownerId === user.uid || c.participants?.includes(user.uid))));
 
                         const renderCampaignCard = (c) => (
                             <div
@@ -453,7 +457,7 @@ const LandingPage = ({
                         };
 
                         const groups = [];
-                        if (user) {
+                        if (user && !user.isAnonymous) {
                             groups.push({ title: "Jornadas que Administras", items: managed, color: "bg-purple-500" });
                             groups.push({ title: "Jornadas en las que Participas", items: participated, color: "bg-blue-500" });
                             groups.push({ title: "Otras Jornadas Activas", items: activePublic, color: "bg-emerald-500" });

@@ -3,10 +3,14 @@ import {
     db, auth, storage, appId,
     onAuthStateChanged,
     signOut,
-    messaging
+    messaging,
+    signInAnonymously,
+    isSignInWithEmailLink,
+    signInWithEmailLink,
+    sendEmailVerification
 } from './firebase';
 import { getToken, onMessage } from 'firebase/messaging';
-import { doc, getDoc, setDoc, updateDoc, arrayUnion, collection, query, where, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, arrayUnion, collection, query, where, onSnapshot } from 'firebase/firestore';
 
 // Components
 import LoadingScreen from './components/LoadingScreen';
@@ -46,6 +50,8 @@ function App() {
     const [campaignParticipants, setCampaignParticipants] = useState([]);
     const [userFollowing, setUserFollowing] = useState(new Set());
     const [loading, setLoading] = useState(true);
+    const [verificationMessage, setVerificationMessage] = useState('');
+    const [verificationError, setVerificationError] = useState('');
 
     // Offline Queue
     const { isOnline, pendingCount, saveToQueue } = useOfflineQueue(storage, db);
@@ -54,8 +60,16 @@ function App() {
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (u) => {
             if (u) {
+                if (u.isAnonymous) {
+                    setUser(u);
+                    setUserProfile(null);
+                    setIsSuperAdmin(false);
+                    setLoading(false);
+                    return;
+                }
+
                 // Scenario 8: Email Verification Gate
-                if (!u.emailVerified && u.providerData.some(p => p.providerId === 'password')) {
+                if (!u.emailVerified && u.providerData?.some(p => p.providerId === 'password')) {
                     setUser(u);
                     setLoading(false);
                     return;
@@ -89,6 +103,8 @@ function App() {
                 setUser(null);
                 setUserProfile(null);
                 setIsSuperAdmin(false);
+                // Garantizar que siempre haya una sesión para cumplir con las reglas de Firestore
+                signInAnonymously(auth).catch(err => console.warn("Error silent anonymous sign-in:", err));
             }
             setLoading(false);
         });
@@ -164,28 +180,107 @@ function App() {
         });
     };
 
+    // Handle Magic Links
+    useEffect(() => {
+        if (isSignInWithEmailLink(auth, window.location.href)) {
+            const processMagicLink = async () => {
+                let email = window.localStorage.getItem('emailForSignIn');
+                if (!email) {
+                    email = window.prompt('Por favor, confirma tu email para completar el inicio de sesión:');
+                }
+
+                if (email) {
+                    try {
+                        const result = await signInWithEmailLink(auth, email, window.location.href);
+                        window.localStorage.removeItem('emailForSignIn');
+                        // Limpiar la URL de parámetros de Firebase
+                        window.history.replaceState({}, document.title, window.location.origin + window.location.pathname);
+                        console.log("Sesión iniciada con Magic Link:", result.user.email);
+                    } catch (err) {
+                        console.error("Error al iniciar sesión con Magic Link:", err);
+                        alert("El enlace ha caducado o ya ha sido utilizado.");
+                    }
+                }
+            };
+            processMagicLink();
+        }
+    }, [appId]);
+
     // Handle Join Links
     useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
-        const joinId = urlParams.get('join');
+        const urlJoinId = urlParams.get('join');
+        if (urlJoinId) {
+            window.sessionStorage.setItem('pendingJoinCampaignId', urlJoinId);
+        }
+        const joinId = urlJoinId || window.sessionStorage.getItem('pendingJoinCampaignId');
 
-        if (joinId && user) {
-            const processJoin = async () => {
+        if (!joinId || !user) return;
+
+        if (user.isAnonymous) {
+            setShowLogin(true);
+            return;
+        }
+
+        const needsEmailVerification = !user.emailVerified &&
+            user.providerData?.some(p => p.providerId === 'password') &&
+            !user.providerData?.some(p => p.providerId === 'google.com');
+        if (needsEmailVerification) return;
+
+        const processJoin = async () => {
+            try {
                 const campRef = doc(db, 'artifacts', appId, 'public', 'data', 'campaigns', joinId);
                 const campSnap = await getDoc(campRef);
 
                 if (campSnap.exists()) {
+                    const campData = campSnap.data();
+                    const updatedParticipants = Array.from(new Set([...(campData.participants || []), user.uid]));
                     await updateDoc(campRef, {
                         participants: arrayUnion(user.uid)
                     });
-                    setCampaign({ id: joinId, ...campSnap.data() });
-                    // Clean URL
+                    setCampaign({ id: joinId, ...campData, participants: updatedParticipants });
+                }
+            } catch (err) {
+                console.error("Error procesando enlace de invitación:", err);
+            } finally {
+                window.sessionStorage.removeItem('pendingJoinCampaignId');
+                if (urlJoinId) {
                     window.history.replaceState({}, document.title, "/");
                 }
-            };
-            processJoin();
-        }
+            }
+        };
+        processJoin();
     }, [user, appId]);
+
+    // Inactivity Auto-Logout (2 hours)
+    useEffect(() => {
+        if (!user || user.isAnonymous) return;
+
+        let timeoutId;
+        const INACTIVITY_LIMIT = 2 * 60 * 60 * 1000; // 2 hours
+
+        const resetTimer = () => {
+            if (timeoutId) clearTimeout(timeoutId);
+            timeoutId = setTimeout(() => {
+                console.log("Inactivity limit reached. Logging out...");
+                handleLogout();
+            }, INACTIVITY_LIMIT);
+        };
+
+        const activityEvents = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart'];
+        activityEvents.forEach(event => {
+            window.addEventListener(event, resetTimer);
+        });
+
+        resetTimer();
+
+        return () => {
+            if (timeoutId) clearTimeout(timeoutId);
+            activityEvents.forEach(event => {
+                window.removeEventListener(event, resetTimer);
+            });
+        };
+    }, [user]);
 
     const handleLogout = () => {
         signOut(auth);
@@ -271,7 +366,7 @@ function App() {
 
     // Social Logic: Follows
     useEffect(() => {
-        if (!user) {
+        if (!user || user.isAnonymous) {
             setUserFollowing(new Set());
             return;
         }
@@ -282,10 +377,10 @@ function App() {
         });
 
         return () => unsubscribe();
-    }, [db, user?.uid]);
+    }, [db, user?.uid, user?.isAnonymous]);
 
     const handleSocialAction = async (action, targetId) => {
-        if (!user) return;
+        if (!user || user.isAnonymous) return;
         if (action === 'follow') {
             const followId = `${user.uid}_${targetId}`;
             const followRef = doc(db, 'follows', followId);
@@ -304,44 +399,87 @@ function App() {
 
     if (loading) return <LoadingScreen />;
 
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('migrate') === 'photos') {
+        return <MigratePhotos db={db} appId={appId} storage={storage} />;
+    }
+
+    if (urlParams.get('diagnostic') === 'true') {
+        return <StorageDiagnostic db={db} appId={appId} storage={storage} />;
+    }
+
     // 0. Verification Gate
-    if (user && !user.emailVerified && user.providerData.some(p => p.providerId === 'password')) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-900 p-4">
-                <div className="max-w-md w-full bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 rounded-3xl p-8 shadow-2xl text-center">
-                    <div className="inline-block p-4 rounded-2xl bg-amber-500/10 mb-6">
-                        <svg className="w-12 h-12 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                        </svg>
-                    </div>
-                    <h2 className="text-2xl font-bold text-white mb-4">Verifica tu email</h2>
-                    <p className="text-slate-400 mb-8">Hemos enviado un enlace de verificación a <strong>{user.email}</strong>. Por favor, revisa tu bandeja de entrada y pulsa en el enlace para activar tu cuenta.</p>
-                    <div className="space-y-4">
-                        <button
-                            onClick={() => window.location.reload()}
-                            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 rounded-xl transition-all"
-                        >
-                            Ya he verificado mi cuenta
-                        </button>
-                        <button
-                            onClick={handleLogout}
-                            className="w-full bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3 rounded-xl transition-all"
-                        >
-                            Cerrar Sesión
-                        </button>
+    if (user && !user.emailVerified && user.providerData?.some(p => p.providerId === 'password')) {
+        // If they have Google, they're usually already verified from Google's side
+        const hasGoogle = user.providerData?.some(p => p.providerId === 'google.com');
+
+        if (!hasGoogle) { // Only force gate if they ONLY have password (or if we really want to force it)
+            return (
+                <div className="min-h-screen flex items-center justify-center bg-slate-900 p-4">
+                    <div className="max-w-md w-full bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 rounded-3xl p-8 shadow-2xl text-center">
+                        <div className="inline-block p-4 rounded-2xl bg-amber-500/10 mb-6">
+                            <svg className="w-12 h-12 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                            </svg>
+                        </div>
+                        <h2 className="text-2xl font-bold text-white mb-4">Verifica tu email</h2>
+                        <p className="text-slate-400 mb-8">Hemos enviado un enlace de verificación a <strong>{user.email}</strong>. Por favor, revisa tu bandeja de entrada y pulsa en el enlace para activar tu cuenta.</p>
+
+                        {verificationMessage && (
+                            <div className="mb-4 p-3 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs">
+                                {verificationMessage}
+                            </div>
+                        )}
+
+                        {verificationError && (
+                            <div className="mb-4 p-3 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 text-xs">
+                                {verificationError}
+                            </div>
+                        )}
+
+                        <div className="space-y-4">
+                            <button
+                                onClick={() => window.location.reload()}
+                                className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 rounded-xl transition-all"
+                            >
+                                Ya he verificado mi cuenta
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    setVerificationMessage('');
+                                    setVerificationError('');
+                                    try {
+                                        await sendEmailVerification(auth.currentUser);
+                                        setVerificationMessage('Email de verificación reenviado.');
+                                    } catch (err) {
+                                        console.error(err);
+                                        setVerificationError('No se pudo reenviar el email. Inténtalo más tarde.');
+                                    }
+                                }}
+                                className="w-full bg-slate-800 hover:bg-slate-700 text-white font-semibold py-3 rounded-xl transition-all"
+                            >
+                                Reenviar email de verificación
+                            </button>
+                            <button
+                                onClick={handleLogout}
+                                className="w-full bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3 rounded-xl transition-all"
+                            >
+                                Cerrar Sesión
+                            </button>
+                        </div>
                     </div>
                 </div>
-            </div>
-        );
+            );
+        }
     }
 
     // 0. Login Override
-    if (showLogin && !user) {
+    if (showLogin && (!user || user.isAnonymous)) {
         return <LoginScreen onLoginSuccess={(u) => { setUser(u); setShowLogin(false); }} />;
     }
 
     // 1. Campaign Manager / My Campaigns
-    if (currentView === 'manage' && user) {
+    if (currentView === 'manage' && user && !user.isAnonymous) {
         return (
             <CampaignManager
                 db={db} appId={appId} user={user}
@@ -353,7 +491,7 @@ function App() {
     }
 
     // 2. Specialized Internal Views
-    if (currentView === 'claim' && user) {
+    if (currentView === 'claim' && user && !user.isAnonymous) {
         return <ClaimRecordsView db={db} appId={appId} user={user} onBack={() => handleNavigate('home')} onNavigate={handleNavigate} />;
     }
 
@@ -361,7 +499,7 @@ function App() {
         return <SuperAdminDashboard db={db} appId={appId} onBack={() => setCurrentView('home')} />;
     }
 
-    if (currentView === 'messages' && user) {
+    if (currentView === 'messages' && user && !user.isAnonymous) {
         return (
             <MessagesView
                 db={db} user={user}
@@ -372,7 +510,7 @@ function App() {
         );
     }
 
-    if (currentView === 'chat' && user && chatPartnerId) {
+    if (currentView === 'chat' && user && !user.isAnonymous && chatPartnerId) {
         return (
             <ChatWindow
                 db={db} user={user}
@@ -382,7 +520,7 @@ function App() {
         );
     }
 
-    if (currentView === 'social' && user) {
+    if (currentView === 'social' && user && !user.isAnonymous) {
         return (
             <SocialView
                 db={db} user={user}
@@ -393,7 +531,7 @@ function App() {
         );
     }
 
-    if (currentView === 'profile' && user) {
+    if (currentView === 'profile' && user && !user.isAnonymous) {
         return (
             <ProfileView
                 db={db} user={user} userProfile={userProfile} storage={storage}

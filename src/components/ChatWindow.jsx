@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, orderBy, addDoc, serverTimestamp, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, or, onSnapshot, orderBy, addDoc, serverTimestamp, doc, getDoc } from 'firebase/firestore';
 
 const sendPushNotification = async (toToken, title, body) => {
     if (!toToken) return;
@@ -30,18 +30,25 @@ const ChatWindow = ({ db, user, otherUserId, onBack }) => {
         // Query messages (simple 1-to-1)
         // In reality, we'd need a composite index for [senderId, receiverId]
         // or a 'chatId' field. For simplicity, we filter on client or use two queries.
+        if (!user?.uid || !otherUserId) return;
+
         const q = query(
             collection(db, 'messages'),
-            orderBy('createdAt', 'asc')
+            or(
+                where('senderId', '==', user.uid),
+                where('receiverId', '==', user.uid)
+            )
         );
 
         const unsubscribe = onSnapshot(q, (snap) => {
             const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-            // Filter only messages between these two
-            const filtered = all.filter(m =>
-                (m.senderId === user.uid && m.receiverId === otherUserId) ||
-                (m.senderId === otherUserId && m.receiverId === user.uid)
-            );
+            // Filter only messages between these two and sort in memory
+            const filtered = all
+                .filter(m =>
+                    (m.senderId === user.uid && m.receiverId === otherUserId) ||
+                    (m.senderId === otherUserId && m.receiverId === user.uid)
+                )
+                .sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
             setMessages(filtered);
             setLoading(false);
         });

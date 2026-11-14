@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, or, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import Breadcrumbs from './Breadcrumbs';
 
 const MessagesView = ({ db, user, onSelectChat, onBack, onNavigate }) => {
@@ -7,8 +7,19 @@ const MessagesView = ({ db, user, onSelectChat, onBack, onNavigate }) => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        if (!user?.uid) {
+            setConversations([]);
+            setLoading(false);
+            return;
+        }
         // Find users I've messaged or who messaged me
-        const q = query(collection(db, 'messages'));
+        const q = query(
+            collection(db, 'messages'),
+            or(
+                where('senderId', '==', user.uid),
+                where('receiverId', '==', user.uid)
+            )
+        );
         const unsubscribe = onSnapshot(q, async (snap) => {
             const msgs = snap.docs.map(d => d.data());
             const partnerIds = new Set();

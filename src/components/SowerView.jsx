@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { addDoc, updateDoc, deleteDoc, doc, collection, serverTimestamp, query, orderBy, where, getDocs, limit, onSnapshot } from 'firebase/firestore';
+import { addDoc, updateDoc, deleteDoc, doc, collection, serverTimestamp, query, orderBy, where, and, or, getDocs, limit, onSnapshot } from 'firebase/firestore';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import {
     Users, LogOut, ArrowRight, AlertTriangle, History,
@@ -109,8 +109,13 @@ const SowerView = ({
                 if (isUserCentric) {
                     q = query(
                         logsRef,
-                        where('campaignId', '==', campaignId),
-                        where('userId', '==', userId)
+                        and(
+                            where('campaignId', '==', campaignId),
+                            or(
+                                where('userId', '==', userId),
+                                where('ownerId', '==', userId)
+                            )
+                        )
                     );
                 } else {
                     q = query(
@@ -287,6 +292,7 @@ const SowerView = ({
                 groupId: selectedGroupId,
                 groupName: isUserCentric ? (userProfile?.displayName || 'Sembrador') : (selectedGroup?.name || 'Desconocido'),
                 userId,
+                ownerId: userId,
                 userName: userProfile?.displayName || 'Sembrador',
                 timestamp: serverTimestamp()
             };
