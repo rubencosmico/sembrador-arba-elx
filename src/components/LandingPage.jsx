@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot, getDocs, limit, or, orderBy } from 'firebase/firestore';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { MapContainer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
+import MapLayerControl from './MapLayerControl';
 
 // Fix for default marker icon
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
@@ -288,13 +289,11 @@ const LandingPage = ({
                         <MapContainer
                             center={[38.2667, -0.6992]}
                             zoom={13}
+                            maxZoom={22}
                             style={{ height: '100%', width: '100%' }}
                             scrollWheelZoom={false}
                         >
-                            <TileLayer
-                                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                            />
+                            <MapLayerControl variant="dark" />
                             {campaigns.filter(c => {
                                 if (mapFilter === 'all') return true;
                                 if (mapFilter === 'active') return c.status === 'active';

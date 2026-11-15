@@ -1,10 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { Camera, MapPin, Check, Shield, X, Save, Pencil, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Camera, MapPin, Check, Shield, X, Save, Pencil, Trash2, Crosshair } from 'lucide-react';
 import { compressImage } from '../utils/imageUtils';
+import PrecisionMapPicker from './PrecisionMapPicker';
+import { formatGpsAccuracy } from '../utils/mapLayers';
 
 const SowingForm = ({
     initialData, // Object with existing data (for edit) or defaults
     seeds,       // Array of available seeds
+    existingLogs = [], // Optional campaign logs for nearby spatial reference on map
+    editingLogId = null,
     onSave,      // Async function(data) -> void. Data includes all fields + photo object
     onCancel,    // Function -> void
     onDelete,    // Async function -> void (optional)
@@ -27,8 +31,17 @@ const SowingForm = ({
     });
 
     const [currentLocation, setCurrentLocation] = useState(initialData?.location || { lat: null, lng: null, acc: null });
+    const [rawGpsLocation, setRawGpsLocation] = useState(initialData?.location?.lat ? initialData.location : null);
     const [gpsStatus, setGpsStatus] = useState(initialData?.location?.lat ? 'success' : 'waiting');
+    const [isWatchingGps, setIsWatchingGps] = useState(false);
+    const [isManuallyPinned, setIsManuallyPinned] = useState(false);
+    const [isMapOpen, setIsMapOpen] = useState(Boolean(initialData?.location?.lat));
     const [isProcessingPhoto, setIsProcessingPhoto] = useState(false);
+
+    const watchIdRef = useRef(null);
+    const isManuallyPinnedRef = useRef(false);
+    const hasGpsFixRef = useRef(Boolean(initialData?.location?.lat));
+    const hasVibratedRef = useRef(false);
 
     // --- HELPERS ---
     // --- HELPERS ---
@@ -50,14 +63,77 @@ const SowingForm = ({
         }
     };
 
+    const stopGpsWatch = () => {
+        if (watchIdRef.current !== null && 'geolocation' in navigator && typeof navigator.geolocation.clearWatch === 'function') {
+            navigator.geolocation.clearWatch(watchIdRef.current);
+        }
+        watchIdRef.current = null;
+        setIsWatchingGps(false);
+    };
+
+    useEffect(() => {
+        return () => stopGpsWatch();
+    }, []);
+
+    const applyGpsPosition = (position) => {
+        const location = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+            acc: position.coords.accuracy
+        };
+        hasGpsFixRef.current = true;
+        setRawGpsLocation(location);
+        setGpsStatus('success');
+        setIsMapOpen(true);
+
+        if (!isManuallyPinnedRef.current) {
+            setCurrentLocation(location);
+        }
+
+        if (!hasVibratedRef.current && window.navigator && window.navigator.vibrate) {
+            window.navigator.vibrate(50);
+            hasVibratedRef.current = true;
+        }
+    };
+
     const captureGPS = async () => {
-        if (!("geolocation" in navigator)) return;
+        if (!('geolocation' in navigator)) return;
+
+        if (isWatchingGps) {
+            stopGpsWatch();
+            return;
+        }
+
+        stopGpsWatch();
+        hasVibratedRef.current = false;
         setGpsStatus('searching');
+
         const getPosition = (options) => {
             return new Promise((resolve, reject) => {
                 navigator.geolocation.getCurrentPosition(resolve, reject, options);
             });
         };
+
+        if (typeof navigator.geolocation.watchPosition === 'function') {
+            setIsWatchingGps(true);
+            watchIdRef.current = navigator.geolocation.watchPosition(
+                applyGpsPosition,
+                async (err) => {
+                    console.log('High accuracy watch fallback', err);
+                    if (hasGpsFixRef.current) return;
+                    try {
+                        const fallbackPos = await getPosition({ enableHighAccuracy: false, timeout: 5000, maximumAge: 0 });
+                        applyGpsPosition(fallbackPos);
+                    } catch (fallbackErr) {
+                        console.warn('GPS falló', fallbackErr);
+                        stopGpsWatch();
+                        setGpsStatus('error');
+                    }
+                },
+                { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+            );
+            return;
+        }
 
         try {
             let position;
@@ -67,19 +143,31 @@ const SowingForm = ({
                 console.log("High accuracy failed, trying low accuracy");
                 position = await getPosition({ enableHighAccuracy: false, timeout: 5000, maximumAge: 0 });
             }
-
-            const location = {
-                lat: position.coords.latitude,
-                lng: position.coords.longitude,
-                acc: position.coords.accuracy
-            };
-            setCurrentLocation(location);
-            setGpsStatus('success');
-            if (window.navigator && window.navigator.vibrate) window.navigator.vibrate(50);
+            applyGpsPosition(position);
         } catch (err) {
             console.warn("GPS falló", err);
             setGpsStatus('error');
         }
+    };
+
+    const handleSelectCoordinates = ({ lat, lng, isManual }) => {
+        const manualFlag = Boolean(isManual);
+        isManuallyPinnedRef.current = manualFlag;
+        setIsManuallyPinned(manualFlag);
+        setCurrentLocation((prev) => ({
+            lat,
+            lng,
+            acc: prev?.acc ?? rawGpsLocation?.acc ?? null
+        }));
+        setGpsStatus('success');
+    };
+
+    const handleRecenterGps = () => {
+        if (!rawGpsLocation?.lat || !rawGpsLocation?.lng) return;
+        isManuallyPinnedRef.current = false;
+        setIsManuallyPinned(false);
+        setCurrentLocation(rawGpsLocation);
+        setGpsStatus('success');
     };
 
     const handleSubmit = async () => {
@@ -88,11 +176,20 @@ const SowingForm = ({
             return;
         }
 
+        stopGpsWatch();
+
+        // Store only the final point { lat, lng, acc } matching Firestore rules
+        const finalLocation = {
+            lat: currentLocation?.lat ?? null,
+            lng: currentLocation?.lng ?? null,
+            acc: currentLocation?.acc ?? null
+        };
+
         // Prepare data package
         const dataToSave = {
             ...formData,
             holeCount: parseInt(formData.holeCount) || 1,
-            location: currentLocation
+            location: finalLocation
         };
         // Note: seedId is in formData. We don't include seedName here, logic assumes parent might resolve it or backend does. 
         // Actually, seedName is useful to store. Let's find it.
@@ -201,16 +298,58 @@ const SowingForm = ({
                 </div>
 
                 {/* GPS */}
-                <button
-                    onClick={captureGPS}
-                    className={`w-full flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${gpsStatus === 'success' ? 'bg-emerald-50 border-emerald-500 text-emerald-700' : 'bg-white border-emerald-100 text-emerald-900/40'}`}
-                >
-                    <div className="flex items-center gap-3">
-                        <MapPin size={20} className={gpsStatus === 'searching' ? 'animate-bounce' : ''} />
-                        <span className="text-xs font-black uppercase">{gpsStatus === 'success' ? `GPS OK (${currentLocation.acc?.toFixed(0)}m)` : gpsStatus === 'searching' ? 'Buscando...' : 'Activar GPS'}</span>
+                <div>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                        <button
+                            type="button"
+                            onClick={captureGPS}
+                            className={`flex-1 flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${gpsStatus === 'success' ? 'bg-emerald-50 border-emerald-500 text-emerald-700' : gpsStatus === 'error' ? 'bg-rose-50 border-rose-300 text-rose-700' : 'bg-white border-emerald-100 text-emerald-900/40'}`}
+                        >
+                            <div className="flex items-center gap-3">
+                                <MapPin size={20} className={gpsStatus === 'searching' || isWatchingGps ? 'animate-pulse text-emerald-600' : ''} />
+                                <div className="text-left">
+                                    <span className="block text-xs font-black uppercase">
+                                        {gpsStatus === 'success'
+                                            ? `GPS OK (${formatGpsAccuracy(currentLocation.acc)})`
+                                            : gpsStatus === 'searching'
+                                                ? 'Estabilizando GPS...'
+                                                : gpsStatus === 'error'
+                                                    ? 'Error GPS · Reintentar'
+                                                    : 'Activar GPS'}
+                                    </span>
+                                    {isWatchingGps && (
+                                        <span className="block text-[10px] font-bold text-emerald-600/80">
+                                            Lectura continua activa · Toca para fijar
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+                            {gpsStatus === 'success' && <Check size={20} />}
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => setIsMapOpen((prev) => !prev)}
+                            className={`flex items-center justify-center gap-2 rounded-2xl border-2 px-4 py-3 text-xs font-black uppercase transition-all sm:w-auto ${isMapOpen ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-emerald-200 bg-emerald-50/70 text-emerald-800 hover:bg-emerald-100'}`}
+                        >
+                            <Crosshair size={16} />
+                            <span>{isMapOpen ? 'Ocultar mapa' : 'Situar / Afinar en mapa'}</span>
+                        </button>
                     </div>
-                    {gpsStatus === 'success' && <Check size={20} />}
-                </button>
+
+                    {isMapOpen && (
+                        <PrecisionMapPicker
+                            location={currentLocation}
+                            rawGpsLocation={rawGpsLocation}
+                            existingLogs={existingLogs}
+                            editingLogId={editingLogId}
+                            isManuallyPinned={isManuallyPinned}
+                            onSelectCoordinates={handleSelectCoordinates}
+                            onRecenterGps={handleRecenterGps}
+                            onClose={() => setIsMapOpen(false)}
+                        />
+                    )}
+                </div>
 
                 {/* Photo */}
                 <div className="pt-2">

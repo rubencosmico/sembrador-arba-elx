@@ -1,20 +1,9 @@
 import React, { useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, Marker, Popup, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-
-// Fix for default Leaflet marker icons in React
-import icon from 'leaflet/dist/images/marker-icon.png';
-import iconShadow from 'leaflet/dist/images/marker-shadow.png';
-
-let DefaultIcon = L.icon({
-    iconUrl: icon,
-    shadowUrl: iconShadow,
-    iconSize: [25, 41],
-    iconAnchor: [12, 41]
-});
-
-L.Marker.prototype.options.icon = DefaultIcon;
+import MapLayerControl from './MapLayerControl';
+import { ELX_DEFAULT_CENTER } from '../utils/mapLayers';
 
 // Helper component to update map bounds when logs change
 const BoundsUpdater = ({ logs }) => {
@@ -27,7 +16,7 @@ const BoundsUpdater = ({ logs }) => {
                 const bounds = L.latLngBounds(validLogs.map(l => [l.location.lat, l.location.lng]));
                 map.fitBounds(bounds, {
                     padding: [50, 50],
-                    maxZoom: 16,
+                    maxZoom: 19,
                     animate: true
                 });
             }
@@ -38,20 +27,18 @@ const BoundsUpdater = ({ logs }) => {
 };
 
 const MapView = ({ logs, onSelect }) => {
-    const defaultCenter = [38.2661, -0.6865];
+    const defaultCenter = ELX_DEFAULT_CENTER;
 
     return (
-        <div className="h-[500px] w-full rounded-3xl overflow-hidden border-4 border-white shadow-xl">
+        <div className="relative h-[500px] w-full rounded-3xl overflow-hidden border-4 border-white shadow-xl">
             <MapContainer
                 center={defaultCenter}
                 zoom={13}
+                maxZoom={22}
                 scrollWheelZoom={false}
                 style={{ height: "100%", width: "100%" }}
             >
-                <TileLayer
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                />
+                <MapLayerControl variant="light" />
 
                 <BoundsUpdater logs={logs} />
 

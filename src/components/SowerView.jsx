@@ -519,6 +519,8 @@ const SowerView = ({
                             <SowingForm
                                 initialData={editingLog || undefined}
                                 seeds={mySeeds}
+                                existingLogs={allTeamLogs}
+                                editingLogId={editingLog?.id}
                                 onSave={handleSow}
                                 onCancel={cancelEditing}
                                 onDelete={editingLog ? () => confirmAndDelete(editingLog.id) : undefined}
