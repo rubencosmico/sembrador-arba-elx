@@ -157,6 +157,21 @@ const CampaignDashboard = ({
             }
 
             const reviewerName = userProfile?.displayName || user.displayName || user.email?.split('@')[0] || 'Voluntario';
+            const existingForLog = checkups.filter((c) => c.logId === reviewingLog.id).length;
+            const nextCount = Math.max(reviewingLog.checkupCount || 0, existingForLog) + 1;
+
+            const logSummaryUpdate = {
+                lastCheckupStatus: formData.status,
+                lastCheckupAt: serverTimestamp(),
+                lastSurvivingCount: formData.status === 'alive' ? (formData.survivingCount ?? 1) : 0,
+                lastGrowthStage: formData.growthStage || null,
+                checkupCount: nextCount,
+                lastCheckupBy: reviewerName,
+                updatedAt: serverTimestamp()
+            };
+
+            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'logs', reviewingLog.id), logSummaryUpdate);
+
             const checkupPayload = {
                 campaignId: campaign.id,
                 logId: reviewingLog.id,
@@ -172,21 +187,6 @@ const CampaignDashboard = ({
             };
 
             await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'checkups'), checkupPayload);
-
-            const existingForLog = checkups.filter((c) => c.logId === reviewingLog.id).length;
-            const nextCount = Math.max(reviewingLog.checkupCount || 0, existingForLog) + 1;
-
-            const logSummaryUpdate = {
-                lastCheckupStatus: formData.status,
-                lastCheckupAt: serverTimestamp(),
-                lastSurvivingCount: formData.status === 'alive' ? (formData.survivingCount ?? 1) : 0,
-                lastGrowthStage: formData.growthStage || null,
-                checkupCount: nextCount,
-                lastCheckupBy: reviewerName,
-                updatedAt: serverTimestamp()
-            };
-
-            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'logs', reviewingLog.id), logSummaryUpdate);
 
             if (selectedLog?.id === reviewingLog.id) {
                 setSelectedLog((prev) => (prev ? { ...prev, ...logSummaryUpdate, lastCheckupAt: { seconds: Math.floor(Date.now() / 1000) } } : null));

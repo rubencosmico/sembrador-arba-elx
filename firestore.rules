@@ -75,6 +75,7 @@ service cloud.firestore {
     //   - provider: string | null (optional, <= 200 chars)
     //   - treatment: string | null (optional, <= 500 chars)
     //   - totalQuantity: number (optional, 0..1000000)
+    //   - remainingQuantity: number | null (optional, 0..1000000)
     //   - quantity: number | string | null (optional, legacy compat)
     //   - photo: string | null (optional, data:image/* or http(s) URL <= 350000 chars)
     //   - assignedSeeds: list (optional, <= 500 items)
@@ -154,9 +155,12 @@ service cloud.firestore {
       return isSignedIn() && !isAnonymous();
     }
 
+    function hasAdminDoc() {
+      return exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
     function isAdmin() {
-      return isRealUser() &&
-             exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+      return isRealUser() && hasAdminDoc();
     }
 
     function isOwner(userId) {
@@ -229,18 +233,40 @@ service cloud.firestore {
              isCampaignDataManager(getCampaign(appId, campaignId));
     }
 
-    function canReviewCampaignData(campaign) {
-      return isCampaignDataManager(campaign) ||
-             (!('visibility' in campaign) || campaign.visibility == null || campaign.visibility == 'public') ||
-             ('participants' in campaign &&
-              campaign.participants is list &&
-              request.auth.uid in campaign.participants);
+    function canReviewExistingCampaign(appId, campaignId) {
+      let camp = getCampaign(appId, campaignId);
+      return hasAdminDoc() ||
+             isLegacyCampaignData(camp) ||
+             ('ownerId' in camp && camp.ownerId == request.auth.uid) ||
+             ('coordinators' in camp && camp.coordinators is list && request.auth.uid in camp.coordinators) ||
+             (!('visibility' in camp) || camp.visibility == null || camp.visibility == 'public') ||
+             ('participants' in camp && camp.participants is list && request.auth.uid in camp.participants);
     }
 
     function canReviewCampaign(appId, campaignId) {
       return isRealUser() &&
              campaignExists(appId, campaignId) &&
-             (isAdmin() || canReviewCampaignData(getCampaign(appId, campaignId)));
+             canReviewExistingCampaign(appId, campaignId);
+    }
+
+    function canManageOrReviewLogCampaign(appId, campaignId, summaryOnly, realUser) {
+      let camp = getCampaign(appId, campaignId);
+      let isManager = isLegacyCampaignData(camp) ||
+                      (
+                        realUser && (
+                          ('ownerId' in camp && camp.ownerId == request.auth.uid) ||
+                          ('coordinators' in camp && camp.coordinators is list && request.auth.uid in camp.coordinators)
+                        )
+                      );
+      return isManager ||
+             (
+               summaryOnly &&
+               realUser &&
+               (
+                 !('visibility' in camp) || camp.visibility == null || camp.visibility == 'public' ||
+                 ('participants' in camp && camp.participants is list && request.auth.uid in camp.participants)
+               )
+             );
     }
 
     function isLogOwner(logData) {
@@ -313,20 +339,30 @@ service cloud.firestore {
              (!('createdAt' in data) || data.createdAt is timestamp);
     }
 
+    function isValidCoordinatesMap(coords) {
+      let lat = coords.get('lat', null);
+      let lng = coords.get('lng', null);
+      let latitude = coords.get('latitude', null);
+      let longitude = coords.get('longitude', null);
+      return coords.keys().hasOnly(['lat', 'lng', 'latitude', 'longitude']) &&
+             (lat == null || lat is number) &&
+             (lng == null || lng is number) &&
+             (latitude == null || latitude is number) &&
+             (longitude == null || longitude is number);
+    }
+
     function isValidCoordinates(coords) {
       return coords == null ||
              coords is latlng ||
-             (
-               coords is map &&
-               coords.keys().hasOnly(['lat', 'lng', 'latitude', 'longitude']) &&
-               (!('lat' in coords) || coords.lat == null || coords.lat is number) &&
-               (!('lng' in coords) || coords.lng == null || coords.lng is number) &&
-               (!('latitude' in coords) || coords.latitude == null || coords.latitude is number) &&
-               (!('longitude' in coords) || coords.longitude == null || coords.longitude is number)
-             );
+             (coords is map && isValidCoordinatesMap(coords));
     }
 
     function isValidCampaign(data) {
+      let desc = data.get('description', null);
+      let ownerId = data.get('ownerId', null);
+      let orgName = data.get('organizationName', null);
+      let locName = data.get('locationName', null);
+      let biome = data.get('biome', null);
       return data.keys().hasOnly([
                'name', 'description', 'createdAt', 'status', 'visibility',
                'ownerId', 'coordinators', 'participants', 'coordinates',
@@ -334,16 +370,16 @@ service cloud.firestore {
              ]) &&
              data.keys().hasAll(['name', 'status']) &&
              data.name is string && data.name.size() <= 200 &&
-             (!('description' in data) || data.description == null || (data.description is string && data.description.size() <= 2000)) &&
+             (desc == null || (desc is string && desc.size() <= 2000)) &&
              data.status in ['active', 'inactive', 'archived'] &&
              (!('visibility' in data) || data.visibility in ['public', 'private']) &&
-             (!('ownerId' in data) || data.ownerId == null || validString(data.ownerId, 1, 128)) &&
+             (ownerId == null || validString(ownerId, 1, 128)) &&
              (!('coordinators' in data) || (data.coordinators is list && data.coordinators.size() <= 100)) &&
              (!('participants' in data) || (data.participants is list && data.participants.size() <= 1000)) &&
              (!('coordinates' in data) || isValidCoordinates(data.coordinates)) &&
-             (!('organizationName' in data) || data.organizationName == null || (data.organizationName is string && data.organizationName.size() <= 150)) &&
-             (!('locationName' in data) || data.locationName == null || (data.locationName is string && data.locationName.size() <= 150)) &&
-             (!('biome' in data) || data.biome == null || (data.biome is string && data.biome.size() <= 100)) &&
+             (orgName == null || (orgName is string && orgName.size() <= 150)) &&
+             (locName == null || (locName is string && locName.size() <= 150)) &&
+             (biome == null || (biome is string && biome.size() <= 100)) &&
              (!('createdAt' in data) || data.createdAt is timestamp);
     }
 
@@ -373,19 +409,25 @@ service cloud.firestore {
     }
 
     function isValidSeed(data) {
+      let provider = data.get('provider', null);
+      let treatment = data.get('treatment', null);
+      let remaining = data.get('remainingQuantity', null);
+      let quantity = data.get('quantity', null);
+      let photo = data.get('photo', null);
       return data.keys().hasOnly([
                'campaignId', 'species', 'provider', 'treatment',
-               'totalQuantity', 'quantity', 'photo', 'assignedSeeds',
+               'totalQuantity', 'remainingQuantity', 'quantity', 'photo', 'assignedSeeds',
                'userAssignments', 'deleted', 'createdAt'
              ]) &&
              data.keys().hasAll(['campaignId', 'species']) &&
              validString(data.campaignId, 1, 128) &&
              validString(data.species, 1, 200) &&
-             (!('provider' in data) || data.provider == null || (data.provider is string && data.provider.size() <= 200)) &&
-             (!('treatment' in data) || data.treatment == null || (data.treatment is string && data.treatment.size() <= 500)) &&
+             (provider == null || (provider is string && provider.size() <= 200)) &&
+             (treatment == null || (treatment is string && treatment.size() <= 500)) &&
              (!('totalQuantity' in data) || (data.totalQuantity is number && data.totalQuantity >= 0 && data.totalQuantity <= 1000000)) &&
-             (!('quantity' in data) || data.quantity == null || (data.quantity is string && data.quantity.size() <= 50) || (data.quantity is number && data.quantity >= 0 && data.quantity <= 1000000)) &&
-             (!('photo' in data) || data.photo == null || data.photo == '' || (data.photo is string && data.photo.size() <= 350000 && (data.photo.matches("^data:image/.*") || isValidUrl(data.photo)))) &&
+             (remaining == null || (remaining is number && remaining >= 0 && remaining <= 1000000)) &&
+             (quantity == null || (quantity is string && quantity.size() <= 50) || (quantity is number && quantity >= 0 && quantity <= 1000000)) &&
+             (photo == null || photo == '' || (photo is string && photo.size() <= 350000 && (photo.matches("^data:image/.*") || isValidUrl(photo)))) &&
              (!('assignedSeeds' in data) || (data.assignedSeeds is list && data.assignedSeeds.size() <= 500)) &&
              (!('userAssignments' in data) || (data.userAssignments is list && data.userAssignments.size() <= 500)) &&
              (!('deleted' in data) || data.deleted is bool) &&
@@ -403,50 +445,83 @@ service cloud.firestore {
              (!('createdAt' in data) || data.createdAt is timestamp);
     }
 
+    function isValidLocationMap(loc) {
+      let lat = loc.get('lat', null);
+      let lng = loc.get('lng', null);
+      let acc = loc.get('acc', null);
+      return loc.keys().hasOnly(['lat', 'lng', 'acc']) &&
+             (lat == null || lat is number) &&
+             (lng == null || lng is number) &&
+             (acc == null || acc is number);
+    }
+
     function isValidLocation(loc) {
       return loc == null ||
              loc is latlng ||
-             (
-               loc is map &&
-               loc.keys().hasOnly(['lat', 'lng', 'acc', 'latitude', 'longitude']) &&
-               (!('lat' in loc) || loc.lat == null || loc.lat is number) &&
-               (!('lng' in loc) || loc.lng == null || loc.lng is number) &&
-               (!('acc' in loc) || loc.acc == null || loc.acc is number) &&
-               (!('latitude' in loc) || loc.latitude == null || loc.latitude is number) &&
-               (!('longitude' in loc) || loc.longitude == null || loc.longitude is number)
-             );
+             (loc is map && isValidLocationMap(loc));
+    }
+
+    function isValidLogCheckupSummary(data) {
+      let updatedAt = data.get('updatedAt', null);
+      let status = data.get('lastCheckupStatus', null);
+      let checkupAt = data.get('lastCheckupAt', null);
+      let surviving = data.get('lastSurvivingCount', null);
+      let stage = data.get('lastGrowthStage', null);
+      let count = data.get('checkupCount', null);
+      let by = data.get('lastCheckupBy', null);
+      return (updatedAt == null || updatedAt is timestamp) &&
+             (status == null || (status is string && status in ['alive', 'dormant', 'dead', 'predated', 'not_found'])) &&
+             (checkupAt == null || checkupAt is timestamp) &&
+             (surviving == null || (surviving is int && surviving >= 0 && surviving <= 1000)) &&
+             (stage == null || (stage is string && stage in ['cotyledons', 'seedling', 'juvenile', 'established'])) &&
+             (count == null || (count is int && count >= 0 && count <= 10000)) &&
+             (by == null || (by is string && by.size() <= 150));
+    }
+
+    function isValidLogCoreFields(data) {
+      let holeCount = data.get('holeCount', null);
+      let quantity = data.get('quantity', null);
+      let microsite = data.get('microsite', null);
+      let orientation = data.get('orientation', null);
+      let withSubstrate = data.get('withSubstrate', null);
+      let withProtector = data.get('withProtector', null);
+      return validString(data.campaignId, 1, 128) &&
+             (data.seedId == null || validString(data.seedId, 1, 128)) &&
+             (data.seedName == null || validString(data.seedName, 1, 200)) &&
+             (holeCount == null || (holeCount is int && holeCount >= 1 && holeCount <= 1000)) &&
+             (quantity == null || (quantity is string && quantity.size() <= 50) || (quantity is number && quantity >= 0 && quantity <= 10000)) &&
+             (microsite == null || (microsite is string && microsite.size() <= 100)) &&
+             (orientation == null || (orientation is string && orientation.size() <= 50)) &&
+             (withSubstrate == null || withSubstrate is bool) &&
+             (withProtector == null || withProtector is bool);
+    }
+
+    function isValidLogMetaFields(data) {
+      let notes = data.get('notes', null);
+      let photoUrl = data.get('photoUrl', null);
+      let syncStatus = data.get('syncStatus', null);
+      let groupId = data.get('groupId', null);
+      let groupName = data.get('groupName', null);
+      let ownerId = data.get('ownerId', null);
+      let userName = data.get('userName', null);
+      return (notes == null || (notes is string && notes.size() <= 2000)) &&
+             isValidLocation(data.get('location', null)) &&
+             (photoUrl == null || photoUrl == '' || photoUrl == 'PENDING' || (isValidUrl(photoUrl) && photoUrl.size() <= 2048)) &&
+             (syncStatus == null || syncStatus in ['synced', 'pending_photo']) &&
+             (groupId == null || (groupId is string && groupId.size() <= 128)) &&
+             (groupName == null || (groupName is string && groupName.size() <= 150)) &&
+             (data.userId == null || validString(data.userId, 1, 128)) &&
+             (ownerId == null || validString(ownerId, 1, 128)) &&
+             (userName == null || (userName is string && userName.size() <= 150)) &&
+             data.timestamp is timestamp;
     }
 
     function isValidLogCommon(data) {
-      return (!('campaignId' in data) || validString(data.campaignId, 1, 128)) &&
-             (!('seedId' in data) || data.seedId == null || validString(data.seedId, 1, 128)) &&
-             (!('seedName' in data) || data.seedName == null || validString(data.seedName, 1, 200)) &&
-             (!('holeCount' in data) || data.holeCount == null || (data.holeCount is int && data.holeCount >= 1 && data.holeCount <= 1000)) &&
-             (!('quantity' in data) || data.quantity == null || (data.quantity is string && data.quantity.size() <= 50) || (data.quantity is number && data.quantity >= 0 && data.quantity <= 10000)) &&
-             (!('microsite' in data) || data.microsite == null || (data.microsite is string && data.microsite.size() <= 100)) &&
-             (!('orientation' in data) || data.orientation == null || (data.orientation is string && data.orientation.size() <= 50)) &&
-             (!('withSubstrate' in data) || data.withSubstrate == null || data.withSubstrate is bool) &&
-             (!('withProtector' in data) || data.withProtector == null || data.withProtector is bool) &&
-             (!('notes' in data) || data.notes == null || (data.notes is string && data.notes.size() <= 2000)) &&
-             (!('location' in data) || isValidLocation(data.location)) &&
-             (!('photoUrl' in data) || data.photoUrl == null || data.photoUrl == '' || data.photoUrl == 'PENDING' || (isValidUrl(data.photoUrl) && data.photoUrl.size() <= 2048)) &&
-             (!('syncStatus' in data) || data.syncStatus == null || data.syncStatus in ['synced', 'pending_photo']) &&
-             (!('groupId' in data) || data.groupId == null || (data.groupId is string && data.groupId.size() <= 128)) &&
-             (!('groupName' in data) || data.groupName == null || (data.groupName is string && data.groupName.size() <= 150)) &&
-             (!('userId' in data) || data.userId == null || validString(data.userId, 1, 128)) &&
-             (!('ownerId' in data) || data.ownerId == null || validString(data.ownerId, 1, 128)) &&
-             (!('userName' in data) || data.userName == null || (data.userName is string && data.userName.size() <= 150)) &&
-             (!('timestamp' in data) || data.timestamp is timestamp) &&
-             (!('updatedAt' in data) || data.updatedAt == null || data.updatedAt is timestamp) &&
-             (!('lastCheckupStatus' in data) || data.lastCheckupStatus == null || (data.lastCheckupStatus is string && data.lastCheckupStatus in ['alive', 'dormant', 'dead', 'predated', 'not_found'])) &&
-             (!('lastCheckupAt' in data) || data.lastCheckupAt == null || data.lastCheckupAt is timestamp) &&
-             (!('lastSurvivingCount' in data) || data.lastSurvivingCount == null || (data.lastSurvivingCount is int && data.lastSurvivingCount >= 0 && data.lastSurvivingCount <= 1000)) &&
-             (!('lastGrowthStage' in data) || data.lastGrowthStage == null || (data.lastGrowthStage is string && data.lastGrowthStage in ['cotyledons', 'seedling', 'juvenile', 'established'])) &&
-             (!('checkupCount' in data) || data.checkupCount == null || (data.checkupCount is int && data.checkupCount >= 0 && data.checkupCount <= 10000)) &&
-             (!('lastCheckupBy' in data) || data.lastCheckupBy == null || (data.lastCheckupBy is string && data.lastCheckupBy.size() <= 150));
+      return isValidLogCoreFields(data) && isValidLogMetaFields(data);
     }
 
     function isValidLogCreate(data) {
+      let ownerId = data.get('ownerId', null);
       return data.keys().hasOnly([
                'campaignId', 'seedId', 'seedName', 'holeCount', 'quantity',
                'microsite', 'orientation', 'withSubstrate', 'withProtector',
@@ -454,18 +529,24 @@ service cloud.firestore {
                'groupName', 'userId', 'ownerId', 'userName', 'timestamp'
              ]) &&
              data.keys().hasAll(['campaignId', 'seedId', 'seedName', 'holeCount', 'userId', 'timestamp']) &&
-             validString(data.campaignId, 1, 128) &&
-             validString(data.seedId, 1, 128) &&
-             validString(data.seedName, 1, 200) &&
-             data.holeCount is int && data.holeCount >= 1 && data.holeCount <= 1000 &&
-             data.userId is string && data.userId == request.auth.uid &&
-             (!('ownerId' in data) || data.ownerId == null || data.ownerId == request.auth.uid) &&
-             data.timestamp is timestamp &&
+             data.seedId != null &&
+             data.seedName != null &&
+             data.holeCount != null &&
+             data.userId == request.auth.uid &&
+             (ownerId == null || ownerId == request.auth.uid) &&
              isValidLogCommon(data);
     }
 
-    function isValidLogUpdate(newData, oldData) {
-      return newData.keys().hasOnly([
+    function isLogCheckupSummaryOnly(affectedKeys) {
+      return affectedKeys.hasOnly([
+        'lastCheckupStatus', 'lastCheckupAt', 'lastSurvivingCount',
+        'lastGrowthStage', 'checkupCount', 'lastCheckupBy', 'updatedAt'
+      ]);
+    }
+
+    function isValidLogUpdateCore(newData, oldData, diff, summaryOnly) {
+      let newKeys = newData.keys();
+      return newKeys.hasOnly([
                'campaignId', 'seedId', 'seedName', 'holeCount', 'quantity',
                'microsite', 'orientation', 'withSubstrate', 'withProtector',
                'notes', 'location', 'photoUrl', 'syncStatus', 'groupId',
@@ -474,14 +555,46 @@ service cloud.firestore {
                'lastCheckupStatus', 'lastCheckupAt', 'lastSurvivingCount',
                'lastGrowthStage', 'checkupCount', 'lastCheckupBy'
              ]) &&
-             (!('campaignId' in oldData) || ('campaignId' in newData && validString(newData.campaignId, 1, 128))) &&
-             (!('seedId' in oldData) || ('seedId' in newData && (newData.seedId == null || validString(newData.seedId, 1, 128)))) &&
-             (!('seedName' in oldData) || ('seedName' in newData && (newData.seedName == null || validString(newData.seedName, 1, 200)))) &&
-             (!('holeCount' in oldData) || ('holeCount' in newData && ((oldData.holeCount == null && newData.holeCount == null) || (newData.holeCount is int && newData.holeCount >= 1 && newData.holeCount <= 1000)))) &&
-             (!('photo' in newData) || ('photo' in oldData && newData.photo == oldData.photo)) &&
-             (!('uid' in newData) || ('uid' in oldData && newData.uid == oldData.uid)) &&
-             (!('method' in newData) || ('method' in oldData && newData.method == oldData.method)) &&
-             isValidLogCommon(newData);
+             newKeys.hasAll(['campaignId', 'seedId', 'seedName', 'userId', 'timestamp']) &&
+             !diff.addedKeys().hasAny(['photo', 'uid', 'method']) &&
+             !diff.changedKeys().hasAny(['photo', 'uid', 'method']) &&
+             isValidLogCheckupSummary(newData) &&
+             (
+               summaryOnly ||
+               (
+                 (!('holeCount' in oldData) || oldData.holeCount == null || newData.get('holeCount', null) is int) &&
+                 isValidLogCommon(newData)
+               )
+             );
+    }
+
+    function isValidLogUpdate(newData, oldData) {
+      let diff = newData.diff(oldData);
+      let summaryOnly = isLogCheckupSummaryOnly(diff.affectedKeys());
+      return isValidLogUpdateCore(newData, oldData, diff, summaryOnly);
+    }
+
+    function canUpdateLog(appId, newData, oldData) {
+      let diff = newData.diff(oldData);
+      let affected = diff.affectedKeys();
+      let summaryOnly = isLogCheckupSummaryOnly(affected);
+      let realUser = isRealUser();
+      let campId = oldData.get('campaignId', null);
+      return isValidLogUpdateCore(newData, oldData, diff, summaryOnly) &&
+             (
+               (realUser && hasAdminDoc()) ||
+               (
+                 (summaryOnly || !affected.hasAny(['campaignId', 'userId', 'ownerId', 'timestamp'])) &&
+                 (
+                   (realUser && isLogOwner(oldData)) ||
+                   (
+                     campId != null &&
+                     campaignExists(appId, campId) &&
+                     canManageOrReviewLogCampaign(appId, campId, summaryOnly, realUser)
+                   )
+                 )
+               )
+             );
     }
 
     function isValidCausesList(causes) {
@@ -503,6 +616,12 @@ service cloud.firestore {
     }
 
     function isValidCheckup(data) {
+      let surviving = data.get('survivingCount', null);
+      let stage = data.get('growthStage', null);
+      let causes = data.get('causes', null);
+      let notes = data.get('notes', null);
+      let photoUrl = data.get('photoUrl', null);
+      let reviewerName = data.get('reviewerName', null);
       return data.keys().hasOnly([
                'campaignId', 'logId', 'status', 'survivingCount', 'growthStage',
                'causes', 'notes', 'photoUrl', 'reviewerId', 'reviewerName', 'timestamp'
@@ -512,13 +631,13 @@ service cloud.firestore {
              validString(data.logId, 1, 128) &&
              data.status is string &&
              data.status in ['alive', 'dormant', 'dead', 'predated', 'not_found'] &&
-             (!('survivingCount' in data) || data.survivingCount == null || (data.survivingCount is int && data.survivingCount >= 0 && data.survivingCount <= 1000)) &&
-             (!('growthStage' in data) || data.growthStage == null || (data.growthStage is string && data.growthStage in ['cotyledons', 'seedling', 'juvenile', 'established'])) &&
-             (!('causes' in data) || isValidCausesList(data.causes)) &&
-             (!('notes' in data) || data.notes == null || (data.notes is string && data.notes.size() <= 2000)) &&
-             (!('photoUrl' in data) || data.photoUrl == null || data.photoUrl == '' || (isValidUrl(data.photoUrl) && data.photoUrl.size() <= 2048)) &&
+             (surviving == null || (surviving is int && surviving >= 0 && surviving <= 1000)) &&
+             (stage == null || (stage is string && stage in ['cotyledons', 'seedling', 'juvenile', 'established'])) &&
+             isValidCausesList(causes) &&
+             (notes == null || (notes is string && notes.size() <= 2000)) &&
+             (photoUrl == null || photoUrl == '' || (isValidUrl(photoUrl) && photoUrl.size() <= 2048)) &&
              validString(data.reviewerId, 1, 128) &&
-             (!('reviewerName' in data) || data.reviewerName == null || (data.reviewerName is string && data.reviewerName.size() <= 150)) &&
+             (reviewerName == null || (reviewerName is string && reviewerName.size() <= 150)) &&
              data.timestamp is timestamp;
     }
 
@@ -740,34 +859,10 @@ service cloud.firestore {
 
       // Update: admin, log owner (userId or ownerId), campaign manager (owner/coordinator/legacy),
       // or authorized campaign reviewer updating only checkup summary fields
-      allow update: if request.resource != null &&
+      allow update: if isSignedIn() &&
+                    request.resource != null &&
                     resource != null &&
-                    isValidLogUpdate(request.resource.data, resource.data) &&
-                    (
-                      isAdmin() ||
-                      (
-                        areImmutableFieldsUnchanged(['campaignId', 'userId', 'ownerId', 'timestamp']) &&
-                        (
-                          (isRealUser() && isLogOwner(resource.data)) ||
-                          (
-                            'campaignId' in resource.data &&
-                            resource.data.campaignId != null &&
-                            (
-                              (isSignedIn() && isLogOwner(resource.data) && isLegacyCampaign(appId, resource.data.campaignId)) ||
-                              isCampaignManager(appId, resource.data.campaignId) ||
-                              (
-                                isRealUser() &&
-                                canReviewCampaign(appId, resource.data.campaignId) &&
-                                request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-                                  'lastCheckupStatus', 'lastCheckupAt', 'lastSurvivingCount',
-                                  'lastGrowthStage', 'checkupCount', 'lastCheckupBy', 'updatedAt'
-                                ])
-                              )
-                            )
-                          )
-                        )
-                      )
-                    );
+                    canUpdateLog(appId, request.resource.data, resource.data);
 
       // Delete: admin, log owner (userId or ownerId), or campaign manager (owner/coordinator/legacy)
       allow delete: if resource != null && (
