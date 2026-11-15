@@ -1,13 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     Users, MapPin, Leaf, Calendar, ArrowLeft,
     ArrowRight, History, PlusCircle, Settings, HelpCircle,
-    Info, Globe, Lock, List, X, Camera, ChevronRight, Map as MapIcon, Package, ChevronDown
+    Info, Globe, Lock, List, X, Camera, ChevronRight, Map as MapIcon, Package, ChevronDown,
+    Sprout
 } from 'lucide-react';
+import {
+    collection, query, where, onSnapshot, addDoc, updateDoc, doc, serverTimestamp
+} from 'firebase/firestore';
+import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import MapView from './MapView';
 import Breadcrumbs from './Breadcrumbs';
+import MonitoringRadarView from './MonitoringRadarView';
+import CheckupFormModal from './CheckupFormModal';
+import {
+    CHECKUP_STATUSES,
+    GROWTH_STAGES,
+    CHECKUP_CAUSES
+} from '../utils/monitoringUtils';
 
 const CampaignDashboard = ({
+    db, appId, storage, userProfile,
     campaign, user, logs, seeds = [],
     onSelectRole, onBack, onLoginClick,
     isSuperAdmin, participantCount = 0,
@@ -15,8 +28,11 @@ const CampaignDashboard = ({
     userFollowing = new Set(),
     onSocialAction, groups = []
 }) => {
-    const [viewMode, setViewMode] = useState('map'); // 'map' | 'list'
+    const [viewMode, setViewMode] = useState('map'); // 'map' | 'list' | 'monitoring'
     const [selectedLog, setSelectedLog] = useState(null);
+    const [reviewingLog, setReviewingLog] = useState(null);
+    const [checkups, setCheckups] = useState([]);
+    const [isSavingCheckup, setIsSavingCheckup] = useState(false);
     const [expandedSpecies, setExpandedSpecies] = useState(null);
     const [showFilters, setShowFilters] = useState(false);
     const [showCommunityModal, setShowCommunityModal] = useState(false);
@@ -28,6 +44,27 @@ const CampaignDashboard = ({
         withSubstrate: null, // null | true | false
         withProtector: null
     });
+
+    useEffect(() => {
+        if (!db || !appId || !campaign?.id) {
+            setCheckups([]);
+            return;
+        }
+        const checkupsCol = collection(db, 'artifacts', appId, 'public', 'data', 'checkups');
+        const q = query(checkupsCol, where('campaignId', '==', campaign.id));
+        const unsub = onSnapshot(
+            q,
+            (snap) => {
+                const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+                items.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
+                setCheckups(items);
+            },
+            (err) => {
+                console.error('Error fetching checkups:', err);
+            }
+        );
+        return () => unsub();
+    }, [db, appId, campaign?.id]);
 
     const totalHolesTotal = logs.reduce((acc, log) => acc + (parseInt(log.holeCount) || 1), 0);
 
@@ -92,7 +129,76 @@ const CampaignDashboard = ({
     const isOwner = Boolean(isRealUser && campaign?.ownerId && user.uid === campaign.ownerId);
     const isCoordinator = Boolean(isRealUser && campaign?.coordinators?.includes(user.uid));
     const canManage = Boolean(isSuperAdmin || isOwner || isCoordinator);
+    const isParticipant = Boolean(isRealUser && campaign?.participants?.includes(user.uid));
+    const canReview = Boolean(
+        isRealUser && (
+            !campaign?.visibility ||
+            campaign.visibility === 'public' ||
+            isParticipant ||
+            canManage
+        )
+    );
     const isActive = campaign.status === 'active';
+
+    const selectedLogCheckups = useMemo(() => {
+        if (!selectedLog) return [];
+        return checkups.filter((c) => c.logId === selectedLog.id);
+    }, [checkups, selectedLog]);
+
+    const handleSaveCheckup = async (formData) => {
+        if (!reviewingLog || !db || !appId || !isRealUser) return;
+        setIsSavingCheckup(true);
+        try {
+            let photoUrl = null;
+            if (formData.photoDataUrl && storage) {
+                const photoRef = ref(storage, `photos/logs/checkups/${reviewingLog.id}_${Date.now()}.jpg`);
+                await uploadString(photoRef, formData.photoDataUrl, 'data_url');
+                photoUrl = await getDownloadURL(photoRef);
+            }
+
+            const reviewerName = userProfile?.displayName || user.displayName || user.email?.split('@')[0] || 'Voluntario';
+            const checkupPayload = {
+                campaignId: campaign.id,
+                logId: reviewingLog.id,
+                status: formData.status,
+                survivingCount: formData.survivingCount,
+                growthStage: formData.growthStage,
+                causes: formData.causes || [],
+                notes: formData.notes || null,
+                photoUrl,
+                reviewerId: user.uid,
+                reviewerName,
+                timestamp: serverTimestamp()
+            };
+
+            await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'checkups'), checkupPayload);
+
+            const existingForLog = checkups.filter((c) => c.logId === reviewingLog.id).length;
+            const nextCount = Math.max(reviewingLog.checkupCount || 0, existingForLog) + 1;
+
+            const logSummaryUpdate = {
+                lastCheckupStatus: formData.status,
+                lastCheckupAt: serverTimestamp(),
+                lastSurvivingCount: formData.status === 'alive' ? (formData.survivingCount ?? 1) : 0,
+                lastGrowthStage: formData.growthStage || null,
+                checkupCount: nextCount,
+                lastCheckupBy: reviewerName,
+                updatedAt: serverTimestamp()
+            };
+
+            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'logs', reviewingLog.id), logSummaryUpdate);
+
+            if (selectedLog?.id === reviewingLog.id) {
+                setSelectedLog((prev) => (prev ? { ...prev, ...logSummaryUpdate, lastCheckupAt: { seconds: Math.floor(Date.now() / 1000) } } : null));
+            }
+            setReviewingLog(null);
+        } catch (err) {
+            console.error('Error guardando revisión:', err);
+            alert('No se pudo guardar la revisión. Verifica tu conexión y permisos.');
+        } finally {
+            setIsSavingCheckup(false);
+        }
+    };
 
     const formatDate = (date) => {
         if (!date) return 'Sin fecha';
@@ -138,11 +244,19 @@ const CampaignDashboard = ({
                         <h1 className="text-xl font-bold uppercase tracking-tight truncate max-w-[200px] md:max-w-md">
                             {campaign.name}
                         </h1>
-                        <div className="flex items-center gap-2 mt-0.5">
+                        <div className="flex flex-wrap items-center gap-2 mt-0.5">
                             <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-500'}`}></span>
                             <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
                                 {isActive ? 'Jornada Activa' : 'Finalizada'}
                             </span>
+                            <span className="text-[10px] font-bold text-slate-400">
+                                • {campaign.organizationName || 'ARBA Elx'} • {campaign.locationName || 'Elche, España'}
+                            </span>
+                            {campaign.biome && (
+                                <span className="hidden sm:inline-block rounded-full border border-teal-500/20 bg-teal-500/10 px-2 py-0.5 text-[9px] font-black uppercase text-teal-400">
+                                    {campaign.biome}
+                                </span>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -298,13 +412,13 @@ const CampaignDashboard = ({
                     </div>
                 </section>
 
-                {/* Main Interactive Map / List Toggle */}
-                <section className="space-y-4">
+                {/* Main Interactive Map / List / Monitoring Toggle */}
+                <section id="monitoring-section" className="space-y-4">
                     <div className="flex items-center justify-between px-2 gap-4 flex-wrap">
                         <div className="flex items-center gap-4 flex-wrap">
                             <h3 className="text-lg font-bold flex items-center gap-2">
-                                {viewMode === 'map' ? <MapPin className="text-emerald-500" /> : <List className="text-emerald-500" />}
-                                {viewMode === 'map' ? 'Mapa de Plantaciones' : 'Lista de Registros'}
+                                {viewMode === 'monitoring' ? <Sprout className="text-emerald-500" /> : viewMode === 'map' ? <MapPin className="text-emerald-500" /> : <List className="text-emerald-500" />}
+                                {viewMode === 'monitoring' ? 'Seguimiento y Supervivencia' : viewMode === 'map' ? 'Mapa de Plantaciones' : 'Lista de Registros'}
                             </h3>
                             <div className="flex bg-white/5 p-1 rounded-xl border border-white/5">
                                 <button
@@ -318,6 +432,13 @@ const CampaignDashboard = ({
                                     className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'list' ? 'bg-emerald-500 text-slate-950' : 'text-slate-500 hover:text-slate-300'}`}
                                 >
                                     Lista
+                                </button>
+                                <button
+                                    onClick={() => setViewMode('monitoring')}
+                                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5 ${viewMode === 'monitoring' ? 'bg-emerald-500 text-slate-950' : 'text-emerald-400/80 hover:text-emerald-300'}`}
+                                >
+                                    <Sprout size={12} />
+                                    Seguimiento
                                 </button>
                             </div>
                         </div>
@@ -411,7 +532,28 @@ const CampaignDashboard = ({
                         </div>
                     )}
 
-                    {viewMode === 'map' ? (
+                    {viewMode === 'monitoring' ? (
+                        <MonitoringRadarView
+                            campaign={campaign}
+                            logs={filteredLogs}
+                            seeds={seeds}
+                            checkups={checkups}
+                            onSelectLog={(log) => setSelectedLog(log)}
+                            onStartReview={(log) => {
+                                if (!isRealUser) {
+                                    onLoginClick?.();
+                                    return;
+                                }
+                                if (!canReview) {
+                                    alert('Solo los participantes o gestores de esta jornada privada pueden registrar revisiones.');
+                                    return;
+                                }
+                                setReviewingLog(log);
+                            }}
+                            isRealUser={isRealUser}
+                            onLoginClick={onLoginClick}
+                        />
+                    ) : viewMode === 'map' ? (
                         <div className="animate-fade-in relative">
                             <MapView logs={filteredLogs} onSelect={(log) => setSelectedLog(log)} />
                         </div>
@@ -426,26 +568,36 @@ const CampaignDashboard = ({
                                 </div>
                             ) : (
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    {filteredLogs.map(log => (
-                                        <div
-                                            key={log.id}
-                                            onClick={() => setSelectedLog(log)}
-                                            className="bg-white/5 hover:bg-white/10 border border-white/5 hover:border-emerald-500/30 p-5 rounded-2xl flex items-center justify-between cursor-pointer transition-all group"
-                                        >
-                                            <div className="flex items-center gap-4">
-                                                <div className="w-12 h-12 bg-slate-900 rounded-xl flex items-center justify-center overflow-hidden text-emerald-500">
-                                                    {log.photoUrl || log.photo ? (
-                                                        <img src={log.photoUrl || log.photo} className="w-full h-full object-cover" alt="" />
-                                                    ) : <Camera size={20} />}
+                                    {filteredLogs.map(log => {
+                                        const checkupCfg = log.lastCheckupStatus ? CHECKUP_STATUSES[log.lastCheckupStatus] : null;
+                                        return (
+                                            <div
+                                                key={log.id}
+                                                onClick={() => setSelectedLog(log)}
+                                                className="bg-white/5 hover:bg-white/10 border border-white/5 hover:border-emerald-500/30 p-5 rounded-2xl flex items-center justify-between cursor-pointer transition-all group"
+                                            >
+                                                <div className="flex items-center gap-4">
+                                                    <div className="w-12 h-12 bg-slate-900 rounded-xl flex items-center justify-center overflow-hidden text-emerald-500">
+                                                        {log.photoUrl || log.photo ? (
+                                                            <img src={log.photoUrl || log.photo} className="w-full h-full object-cover" alt="" />
+                                                        ) : <Camera size={20} />}
+                                                    </div>
+                                                    <div className="text-left">
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <h4 className="font-bold text-slate-200 group-hover:text-white transition-colors uppercase text-sm">{log.seedName}</h4>
+                                                            {checkupCfg && (
+                                                                <span className={`px-2 py-0.5 rounded-full border text-[9px] font-black uppercase ${checkupCfg.badgeClass}`}>
+                                                                    {checkupCfg.shortLabel}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{participants.find(p => p.uid === (log.ownerId || log.userId))?.displayName || log.userName || log.groupName} • {log.holeCount || 1} golpes</p>
+                                                    </div>
                                                 </div>
-                                                <div className="text-left">
-                                                    <h4 className="font-bold text-slate-200 group-hover:text-white transition-colors uppercase text-sm">{log.seedName}</h4>
-                                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{participants.find(p => p.uid === (log.ownerId || log.userId))?.displayName || log.userName || log.groupName} • {log.holeCount || 1} golpes</p>
-                                                </div>
+                                                <ChevronRight className="text-slate-700 group-hover:text-emerald-500 transition-colors shrink-0" />
                                             </div>
-                                            <ChevronRight className="text-slate-700 group-hover:text-emerald-500 transition-colors shrink-0" />
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>
@@ -535,6 +687,23 @@ const CampaignDashboard = ({
                                 </div>
                             </button>
                         )}
+
+                        {/* Field Monitoring Action (available in active & finalized campaigns) */}
+                        <button
+                            onClick={() => {
+                                setViewMode('monitoring');
+                                document.getElementById('monitoring-section')?.scrollIntoView({ behavior: 'smooth' });
+                            }}
+                            className="group bg-teal-500/10 hover:bg-teal-500/20 p-8 rounded-[2rem] border border-teal-500/30 transition-all flex flex-col justify-between h-56 active:scale-[0.98]"
+                        >
+                            <Sprout size={40} className="text-teal-400" />
+                            <div className="text-left w-full">
+                                <h4 className="text-2xl font-black uppercase leading-none mb-2 text-white">Seguimiento<br />en Campo</h4>
+                                <p className="text-teal-400 text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 transition-colors">
+                                    Revisar germinación <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
+                                </p>
+                            </div>
+                        </button>
 
                         {/* Public Link / Info */}
                         <button
@@ -656,7 +825,7 @@ const CampaignDashboard = ({
                                                     <Info size={40} className="text-emerald-500" />
                                                 </div>
                                                 <p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-2 flex items-center gap-2">
-                                                    <div className="w-1 h-1 bg-emerald-500 rounded-full"></div>
+                                                    <span className="w-1 h-1 bg-emerald-500 rounded-full"></span>
                                                     Tratamiento de la Variedad
                                                 </p>
                                                 <p className="text-sm font-medium text-slate-200 leading-relaxed">
@@ -664,6 +833,84 @@ const CampaignDashboard = ({
                                                 </p>
                                             </div>
                                         )}
+
+                                        {/* Longitudinal Monitoring / Timelapse Section */}
+                                        <div className="space-y-4 pt-2 border-t border-white/10">
+                                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                                <div>
+                                                    <h4 className="text-xs font-black uppercase tracking-widest text-teal-400 flex items-center gap-2">
+                                                        <Sprout size={14} />
+                                                        Seguimiento / Timelapse ({selectedLogCheckups.length})
+                                                    </h4>
+                                                    {selectedLog.lastCheckupStatus && CHECKUP_STATUSES[selectedLog.lastCheckupStatus] && (
+                                                        <span className={`inline-block mt-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase ${CHECKUP_STATUSES[selectedLog.lastCheckupStatus].badgeClass}`}>
+                                                            Último estado: {CHECKUP_STATUSES[selectedLog.lastCheckupStatus].label}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                {(!isRealUser || canReview) && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            if (!isRealUser) {
+                                                                onLoginClick?.();
+                                                                return;
+                                                            }
+                                                            setReviewingLog(selectedLog);
+                                                        }}
+                                                        className="flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3.5 py-2 text-[11px] font-black uppercase text-slate-950 shadow-lg shadow-emerald-500/20 transition-all hover:bg-emerald-400"
+                                                    >
+                                                        <PlusCircle size={14} />
+                                                        <span>{isRealUser ? 'Añadir Revisión' : 'Inicia sesión para revisar'}</span>
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            {selectedLogCheckups.length === 0 ? (
+                                                <p className="text-xs text-slate-500 italic">
+                                                    Aún no hay revisiones posteriores de campo registradas para este golpe.
+                                                </p>
+                                            ) : (
+                                                <div className="space-y-3 max-h-64 overflow-y-auto pr-1 no-scrollbar">
+                                                    {selectedLogCheckups.map((chk) => {
+                                                        const cfg = CHECKUP_STATUSES[chk.status];
+                                                        const stageLabel = GROWTH_STAGES.find((g) => g.id === chk.growthStage)?.label;
+                                                        return (
+                                                            <div key={chk.id} className="rounded-2xl border border-white/10 bg-slate-950/60 p-4 space-y-2">
+                                                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                                                    <span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase ${cfg?.badgeClass || 'border-white/10 text-slate-300'}`}>
+                                                                        {cfg?.label || chk.status}
+                                                                    </span>
+                                                                    <span className="text-[10px] font-mono text-slate-500">
+                                                                        {chk.timestamp?.seconds ? new Date(chk.timestamp.seconds * 1000).toLocaleDateString('es-ES') : 'Reciente'} · {chk.reviewerName || 'Voluntario'}
+                                                                    </span>
+                                                                </div>
+                                                                {chk.status === 'alive' && (
+                                                                    <p className="text-xs font-bold text-emerald-300">
+                                                                        {chk.survivingCount || 1} plántula(s) viva(s){stageLabel ? ` · ${stageLabel}` : ''}
+                                                                    </p>
+                                                                )}
+                                                                {chk.causes?.length > 0 && (
+                                                                    <div className="flex flex-wrap gap-1.5">
+                                                                        {chk.causes.map((cId) => (
+                                                                            <span key={cId} className="rounded-md bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-300">
+                                                                                {CHECKUP_CAUSES.find((c) => c.id === cId)?.label || cId}
+                                                                            </span>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+                                                                {chk.notes && (
+                                                                    <p className="text-xs text-slate-300">{chk.notes}</p>
+                                                                )}
+                                                                {chk.photoUrl && (
+                                                                    <img src={chk.photoUrl} alt="Evolución en campo" className="h-32 w-full rounded-xl object-cover border border-white/10" />
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -740,6 +987,15 @@ const CampaignDashboard = ({
                         </div>
                     </div>
                 </div>
+            )}
+
+            {reviewingLog && (
+                <CheckupFormModal
+                    log={reviewingLog}
+                    onClose={() => setReviewingLog(null)}
+                    onSave={handleSaveCheckup}
+                    isSaving={isSavingCheckup}
+                />
             )}
         </div >
     );

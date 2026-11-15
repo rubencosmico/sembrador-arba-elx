@@ -14,7 +14,8 @@ import {
 } from 'lucide-react';
 import { compressImage } from '../utils/imageUtils';
 import { filterAndSortLogs } from '../utils/logUtils';
-import { generateLogCSV } from '../utils/csvUtils';
+import { generateLogCSV, generateLogGeoJSON } from '../utils/csvUtils';
+import { BIOME_OPTIONS } from '../utils/monitoringUtils';
 import MapView from './MapView';
 import Breadcrumbs from './Breadcrumbs';
 
@@ -179,6 +180,9 @@ const CampaignManager = ({
         try {
             await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'campaigns'), {
                 name: newCampaignName,
+                organizationName: 'ARBA Elx',
+                locationName: 'Elche, España',
+                biome: 'Matorral semiárido mediterráneo',
                 createdAt: serverTimestamp(),
                 status: 'active',
                 visibility: 'public',
@@ -400,6 +404,20 @@ const CampaignManager = ({
         document.body.removeChild(link);
     };
 
+    const exportGeoJSON = () => {
+        const currentCamp = allCampaigns.find(c => c.id === selectedCampaignId);
+        const geoJsonStr = generateLogGeoJSON(logs, campSeeds, currentCamp?.name || selectedCampaignId);
+        const blob = new Blob([geoJsonStr], { type: 'application/geo+json;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `datos_jornada_${selectedCampaignId}.geojson`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+
     const totalHoles = logs.reduce((acc, log) => acc + (parseInt(log.holeCount) || 1), 0);
 
     // Deep Management View
@@ -499,6 +517,40 @@ const CampaignManager = ({
                                                 value={camp?.description || ''}
                                                 onChange={(e) => handleUpdateCampaign(camp.id, { description: e.target.value })}
                                             />
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Colectivo / Organización</label>
+                                                <input
+                                                    className="w-full bg-slate-950/50 border border-white/10 rounded-2xl p-4 text-sm font-bold focus:ring-2 focus:ring-emerald-500/50 outline-none transition-all"
+                                                    placeholder="ARBA Elx"
+                                                    value={camp?.organizationName ?? ''}
+                                                    onChange={(e) => handleUpdateCampaign(camp.id, { organizationName: e.target.value })}
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Municipio / Región</label>
+                                                <input
+                                                    className="w-full bg-slate-950/50 border border-white/10 rounded-2xl p-4 text-sm font-bold focus:ring-2 focus:ring-emerald-500/50 outline-none transition-all"
+                                                    placeholder="Elche, España"
+                                                    value={camp?.locationName ?? ''}
+                                                    onChange={(e) => handleUpdateCampaign(camp.id, { locationName: e.target.value })}
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Ecosistema / Bioma</label>
+                                                <select
+                                                    className="w-full bg-slate-950/50 border border-white/10 rounded-2xl p-4 text-sm font-bold focus:ring-2 focus:ring-emerald-500/50 outline-none transition-all"
+                                                    value={camp?.biome || ''}
+                                                    onChange={(e) => handleUpdateCampaign(camp.id, { biome: e.target.value })}
+                                                >
+                                                    <option value="">Sin especificar</option>
+                                                    {BIOME_OPTIONS.map((b) => (
+                                                        <option key={b} value={b}>{b}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
                                         </div>
 
                                         <div className="grid grid-cols-2 gap-4">
@@ -788,9 +840,12 @@ const CampaignManager = ({
                                             <div className="text-5xl font-black text-white leading-tight">{totalHoles} <span className="text-lg font-bold text-emerald-500 ml-1">golpes</span></div>
                                         </div>
                                     </div>
-                                    <div className="flex gap-2 w-full md:w-auto">
-                                        <button onClick={exportCSV} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-4 bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-[1.5rem] font-black text-xs uppercase tracking-widest transition-all">
+                                    <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                                        <button onClick={exportCSV} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-4 bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-[1.5rem] font-black text-xs uppercase tracking-widest transition-all">
                                             <Download size={18} /> Exportar CSV
+                                        </button>
+                                        <button onClick={exportGeoJSON} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-4 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 rounded-[1.5rem] font-black text-xs uppercase tracking-widest transition-all">
+                                            <Download size={18} /> Exportar GeoJSON
                                         </button>
                                     </div>
                                 </div>

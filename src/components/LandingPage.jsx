@@ -406,9 +406,14 @@ const LandingPage = ({
                                 onClick={() => onSelectCampaign(c)}
                                 className="group bg-slate-800/40 hover:bg-slate-800/70 border border-slate-700/50 hover:border-emerald-500/50 rounded-3xl p-6 transition-all cursor-pointer transform hover:-translate-y-1"
                             >
-                                <div className="flex justify-between items-start mb-4">
-                                    <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${c.status === 'active' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-700 text-slate-400'}`}>
-                                        {c.status === 'active' ? '● ACTIVA' : 'FINALIZADA'}
+                                <div className="flex justify-between items-start gap-2 mb-4">
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                        <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${c.status === 'active' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-700 text-slate-400'}`}>
+                                            {c.status === 'active' ? '● ACTIVA' : 'FINALIZADA'}
+                                        </div>
+                                        <div className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-900/80 text-slate-300 border border-slate-700/60">
+                                            {c.organizationName || 'ARBA Elx'}
+                                        </div>
                                     </div>
                                     {c.visibility === 'private' && (
                                         <div className="text-slate-500">
@@ -419,7 +424,14 @@ const LandingPage = ({
                                     )}
                                 </div>
                                 <h4 className="text-xl font-bold mb-2 group-hover:text-emerald-400 transition-colors uppercase">{c.name}</h4>
-                                <p className="text-slate-400 text-sm line-clamp-2 mb-6">{c.description || 'Contribuir a la plantación y seguimiento de especies autóctonas.'}</p>
+                                <p className="text-slate-400 text-sm line-clamp-2 mb-4">{c.description || 'Contribuir a la plantación y seguimiento de especies autóctonas.'}</p>
+                                {c.biome && (
+                                    <div className="mb-4">
+                                        <span className="inline-block px-2.5 py-0.5 rounded-lg text-[10px] font-bold text-teal-400 bg-teal-500/10 border border-teal-500/20">
+                                            {c.biome}
+                                        </span>
+                                    </div>
+                                )}
 
                                 <div className="flex items-center justify-between text-xs text-slate-500">
                                     <div className="flex items-center space-x-1">
@@ -427,7 +439,7 @@ const LandingPage = ({
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                                         </svg>
-                                        <span>Elche, España</span>
+                                        <span>{c.locationName || 'Elche, España'}</span>
                                     </div>
                                     <div className="flex -space-x-2">
                                         {[1, 2, 3].map(i => (

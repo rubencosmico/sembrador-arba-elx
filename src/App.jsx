@@ -565,6 +565,10 @@ function App() {
     if (!role) {
         return (
             <CampaignDashboard
+                db={db}
+                appId={appId}
+                storage={storage}
+                userProfile={userProfile}
                 campaign={campaign}
                 user={user}
                 logs={logs}
