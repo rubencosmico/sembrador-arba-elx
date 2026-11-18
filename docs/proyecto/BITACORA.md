@@ -1,5 +1,51 @@
 # Bitácora Técnica del Proyecto
 
+## [2026-11-18] — Entrega 1 de Ciencia Ciudadana en Producción (`main`): Seguimiento Longitudinal, Radar GPS, Clima Open-Meteo, GeoJSON y Optimización AST de Firestore Rules
+
+### Resumen de la Sesión
+Se completó, depuró en vivo, validó y publicó en producción (`main`, commit `e2ae2b0`) la **Entrega 1 del Plan de Ciencia Ciudadana y Metodología de Semillas**, dotando a la plataforma de seguimiento longitudinal de golpes sembrados (`checkups`), radar GPS de localización en el monte, integración meteorológica con Open-Meteo, exportación abierta a GeoJSON/CSV enriquecido y metadatos multi-colectivo. Asimismo, se diagnosticó y resolvió un límite de evaluación AST en Cloud Firestore Security Rules al actualizar documentos reales de `logs`.
+
+### Cambios Implementados
+- **Seguimiento Longitudinal y Radar en Campo ([MonitoringRadarView.jsx](file:///home/ruben/dev/sembrador-arba-elx/src/components/MonitoringRadarView.jsx), [CheckupFormModal.jsx](file:///home/ruben/dev/sembrador-arba-elx/src/components/CheckupFormModal.jsx), [CampaignDashboard.jsx](file:///home/ruben/dev/sembrador-arba-elx/src/components/CampaignDashboard.jsx), [MapView.jsx](file:///home/ruben/dev/sembrador-arba-elx/src/components/MapView.jsx)):**
+  - Creación de la colección `artifacts/arba-elx/public/data/checkups/{checkupId}` y desnormalización de 7 campos resumen en `logs/{logId}` (`lastCheckupStatus`, `lastCheckupAt`, `lastSurvivingCount`, `lastGrowthStage`, `checkupCount`, `lastCheckupBy`, `updatedAt`).
+  - Modo Radar GPS en tiempo real ordenado por distancia Haversine en metros y rumbo cardinal (`N`, `NE`, `E`...), con miniatura de la foto original *T=0*, mapa satélite coloreado por estado de supervivencia y línea de tiempo (*Timelapse* *T=0 → T+N*) en el detalle de cada golpe.
+  - En `handleSaveCheckup` ([CampaignDashboard.jsx](file:///home/ruben/dev/sembrador-arba-elx/src/components/CampaignDashboard.jsx)), se reordenó la escritura para ejecutar `updateDoc` sobre `logs/{logId}` **antes** de `addDoc` sobre `checkups`, garantizando que nunca se creen revisiones huérfanas si falla la actualización del registro principal.
+- **Analítica Científica, Clima Open-Meteo y Exportación GIS ([monitoringUtils.js](file:///home/ruben/dev/sembrador-arba-elx/src/utils/monitoringUtils.js), [csvUtils.js](file:///home/ruben/dev/sembrador-arba-elx/src/utils/csvUtils.js)):**
+  - Consulta automática a **Open-Meteo Archive API** (sin API key) desde la fecha de siembra y coordenadas medias de la jornada para obtener precipitación acumulada post-siembra (mm), días de lluvia y temperatura máxima.
+  - Desglose comparativo de tasas de supervivencia y emergencia por **Micrositio**, **Orientación** y **Lote/Tratamiento**.
+  - Exportación abierta a **GeoJSON** (`generateLogGeoJSON`, estándar EPSG:4326 compatible con QGIS/ArcGIS/uMap) y **CSV enriquecido** con datos del último seguimiento.
+- **Metadatos Multi-Colectivo ([CampaignManager.jsx](file:///home/ruben/dev/sembrador-arba-elx/src/components/CampaignManager.jsx), [LandingPage.jsx](file:///home/ruben/dev/sembrador-arba-elx/src/components/LandingPage.jsx)):**
+  - Añadidos `organizationName` (por defecto `"ARBA Elx"`), `locationName` (por defecto `"Elche, España"`) y `biome` (selector de ecosistema) con retrocompatibilidad total para las 7 campañas existentes.
+- **Causa Raíz y Optimización AST en [firestore.rules](file:///home/ruben/dev/sembrador-arba-elx/firestore.rules) (vía `firestore-rules-author`):**
+  - Al probar en vivo la actualización de los 7 campos resumen sobre `logs/o6Vs1uRYK297mtx5IbdY` (pasando de 19 a 26 campos), Firestore devolvía `403 PERMISSION_DENIED` por superar el **límite de 1.000 expresiones AST evaluadas por petición**.
+  - Se refactorizaron las funciones de validación y autorización usando variables locales `let` y `.get(..., null)`, eliminando claves muertas (`latitude`/`longitude`) en `isValidLocationMap`, separando `isValidLogCheckupSummary(data)`, evaluando `isValidLogCommon(newData)` únicamente cuando se modifican campos distintos a los 7 de revisión, unificando `canUpdateLog` y añadiendo soporte para `remainingQuantity` en `isValidSeed`.
+  - Desplegado el ruleset `8cf23a37-017e-47cf-b50d-ee1c026db6ee` y limpiados los 7 documentos duplicados de prueba en `checkups`, conservando `checkups/I7sIPRHN6ND2bhahUp3R` (`checkupCount: 1`).
+
+### Verificación
+- **API REST de Firestore en vivo (`logs/o6Vs1uRYK297mtx5IbdY` con 26 campos):** `200 OK` al actualizar los 7 campos resumen tanto como dueño/admin (`uo8s4kCGgrZJwXETFtTGThFAATE2`) como con un voluntario real no-admin/no-dueño (`gsE56DtzULN2K4T3egfXHDLyFd93`); `403` al intentar editar `notes` como voluntario no propietario; `200 OK` al editar `notes` como propietario.
+- **Tests y Build:** `npm run test:run` (`9/9` suites, `24/24` tests en verde) y `npm run build` sin errores.
+- **Producción:** Merge fast-forward a `main` (`e2ae2b0`) y despliegue en Vercel Production (`7835750995`, `state: "success"`).
+
+---
+
+## [2026-11-15] — Etapa 2 en Producción (`main`): Capas Satélite PNOA por Defecto y Posicionamiento GPS Submétrico
+
+### Resumen de la Sesión
+Se investigó la viabilidad técnica del posicionamiento centimétrico/submétrico en smartphones de campo y se implementó y publicó en producción (`main`, commit `496ad5a`) la mejora integral de cartografía satélite y posicionamiento interactivo de golpes de siembra.
+
+### Cambios Implementados
+- **Capas Satélite de Alta Resolución ([mapLayers.js](file:///home/ruben/dev/sembrador-arba-elx/src/utils/mapLayers.js), [MapLayerControl.jsx](file:///home/ruben/dev/sembrador-arba-elx/src/components/MapLayerControl.jsx), [MapView.jsx](file:///home/ruben/dev/sembrador-arba-elx/src/components/MapView.jsx), [LandingPage.jsx](file:///home/ruben/dev/sembrador-arba-elx/src/components/LandingPage.jsx)):**
+  - Configurada la **Ortofoto PNOA máxima actualidad (IGN España, 15–25 cm/píxel, zoom nativo 20 y sobreescalado digital hasta zoom 22)** como capa activa por defecto en todos los mapas, complementada con Satélite Global (Esri World Imagery) y Callejero/Topográfico (OpenStreetMap).
+- **Selector Submétrico y Captura Continua ([PrecisionMapPicker.jsx](file:///home/ruben/dev/sembrador-arba-elx/src/components/PrecisionMapPicker.jsx), [SowingForm.jsx](file:///home/ruben/dev/sembrador-arba-elx/src/components/SowingForm.jsx)):**
+  - Sustitución de `getCurrentPosition` puntual por escucha continua con `watchPosition`, reteniendo automáticamente la coordenada de menor radio de error (`acc`) e informando mediante indicador semafórico.
+  - Mapa satélite interactivo en el formulario de siembra con pin arrastrable y cruceta de micro-ajuste cardinal (`N`, `S`, `E`, `O`) con pasos seleccionables de **`25 cm`** o **`1 m`**, persistiendo exclusivamente `{ lat, lng, acc }` del punto final.
+
+### Verificación
+- **Tests y Build:** Añadida suite [SowingForm.test.jsx](file:///home/ruben/dev/sembrador-arba-elx/src/components/SowingForm.test.jsx) (`5` tests cubriendo `watchPosition`, micro-ajuste de 25 cm, cambio de capas y payload final). `npm run test:run` (`7/7` suites, `19/19` tests) y `npm run build` en verde.
+- **Producción:** Fusionado en `main` (`496ad5a`), desplegado en Vercel Production y eliminada la rama temporal `feature/gps-satellite-precision`.
+
+---
+
 ## [2026-11-14] — Fase 3 y Fase 4 Completadas: Validación Preview, Migración de Datos, Reglas y Paso a Producción (`main`)
 
 ### Resumen de la Sesión
@@ -91,4 +137,3 @@ Se realizó una auditoría completa en modo lectura del historial de Git y del c
 
 ### Próximos Pasos
 - Ejecutar limpieza de ramas, implantar los archivos de memoria persistente y abordar la Fase 2 del `ROADMAP.md`.
-
