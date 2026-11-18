@@ -1,9 +1,9 @@
 # Bitácora Técnica del Proyecto
 
-## [2026-11-18] — Entrega 2 (*Open Seed Lab*): Biblioteca Pública de Protocolos, Reglas, Modo Taller y Procedencia Genética (`feature/open-seed-lab`)
+## [2026-11-18] — Entrega 2 (*Open Seed Lab*) en Producción (`main`): Biblioteca Pública de Protocolos, Reglas, Modo Taller y Procedencia Genética
 
 ### Resumen de la Sesión
-Se realizó la limpieza de la rama ya fusionada `feature/citizen-science-monitoring` (local y remota), se creó la rama limpia `feature/open-seed-lab` desde `main` (`e2ae2b0`) y se implementó íntegramente la **Entrega 2 (*Open Seed Lab*)** del plan de ciencia ciudadana.
+Se realizó la limpieza de la rama ya fusionada `feature/citizen-science-monitoring` (local y remota), se creó la rama `feature/open-seed-lab` desde `main` (`e2ae2b0`), se implementó íntegramente la **Entrega 2 (*Open Seed Lab*)** del plan de ciencia ciudadana, se validó el despliegue en Vercel Preview (`7892591602`) y se fusionó en `main` para su publicación en producción junto con la eliminación de la rama temporal.
 
 ### Cambios Implementados
 - **Catálogo Base y Métricas Empíricas ([seedProtocolsCatalog.js](file:///home/ruben/dev/sembrador-arba-elx/src/utils/seedProtocolsCatalog.js)):**
@@ -19,6 +19,7 @@ Se realizó la limpieza de la rama ya fusionada `feature/citizen-science-monitor
 
 ### Verificación
 - **Tests y Build:** Añadida suite [SeedLabView.test.jsx](file:///home/ruben/dev/sembrador-arba-elx/src/components/SeedLabView.test.jsx) y ampliados [CampaignManager.test.jsx](file:///home/ruben/dev/sembrador-arba-elx/src/components/CampaignManager.test.jsx) y [csvUtils.test.js](file:///home/ruben/dev/sembrador-arba-elx/src/utils/csvUtils.test.js). `npm run test:run`: `10/10` archivos, `28/28` tests en verde; `npm run build`: compilación Vite sin errores (`1567` módulos).
+- **Preview y Producción (`main`):** Validado en Vercel Preview (`7892591602`, `state: "success"`), fusionado en `main` y desplegado en producción, manteniendo limpio el árbol de ramas.
 
 ---
 

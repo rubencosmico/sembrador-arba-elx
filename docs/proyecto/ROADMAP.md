@@ -38,7 +38,7 @@
 
 ---
 
-## Etapa 3: Ciencia Ciudadana y Metodología de Semillas (EN CURSO)
+## Etapa 3: Ciencia Ciudadana y Metodología de Semillas (COMPLETADA)
 
 ### Entrega 1: Seguimiento en Campo, Radar GPS, Clima Open-Meteo, GeoJSON y Metadatos Multi-Colectivo (COMPLETADA EN `main`)
 - [x] **Modelo de Datos y Reglas de Seguridad (`firestore.rules` vía `firestore-rules-author`):**
@@ -57,7 +57,7 @@
   - Añadidos `src/utils/monitoringUtils.test.js`, `src/utils/csvUtils.test.js` y `src/components/CampaignDashboard.test.jsx` (`9` suites / `24` tests en verde).
   - Verificación en vivo contra Firestore REST API y fusión en `main` (`e2ae2b0`).
 
-### Entrega 2: Biblioteca Pública Global de Protocolos de Semillas (*Open Seed Lab*) (IMPLEMENTADA EN `feature/open-seed-lab`)
+### Entrega 2: Biblioteca Pública Global de Protocolos de Semillas (*Open Seed Lab*) (COMPLETADA EN `main`)
 - [x] **1. Higiene de Ramas Previa:**
   - Eliminada la rama fusionada `feature/citizen-science-monitoring` (local y remota) y creada la rama limpia `feature/open-seed-lab` desde `main`.
 - [x] **2. Catálogo Base y Reglas de Seguridad (`seedProtocols`):**
@@ -70,8 +70,8 @@
   - Selector de protocolo de la biblioteca al crear un lote en `CampaignManager.jsx` para autocompletar tratamiento y especie, junto a los campos de procedencia genética (`originLocation`, `harvestYear`) y exportación en CSV/GeoJSON.
 - [x] **5. Tests Unitarios y Build de Producción:**
   - Añadida suite `src/components/SeedLabView.test.jsx` y ampliados `src/components/CampaignManager.test.jsx` y `src/utils/csvUtils.test.js` (`10` suites / `28` tests en verde; `npm run build` con `1567` módulos).
-- [ ] **6. Validación en Vercel Preview y Paso a Producción (`main`):**
-  - Validar la interfaz de *Open Seed Lab* en el despliegue Preview de `feature/open-seed-lab` antes de fusionar en `main`.
+- [x] **6. Validación en Vercel Preview y Paso a Producción (`main`):**
+  - Validado el despliegue Preview de `feature/open-seed-lab`, fusionado en `main`, publicado en Vercel Production y eliminada la rama temporal `feature/open-seed-lab`.
 
 ---
 
