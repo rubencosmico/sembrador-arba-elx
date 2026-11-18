@@ -1,5 +1,27 @@
 # Bitácora Técnica del Proyecto
 
+## [2026-11-18] — Entrega 2 (*Open Seed Lab*): Biblioteca Pública de Protocolos, Reglas, Modo Taller y Procedencia Genética (`feature/open-seed-lab`)
+
+### Resumen de la Sesión
+Se realizó la limpieza de la rama ya fusionada `feature/citizen-science-monitoring` (local y remota), se creó la rama limpia `feature/open-seed-lab` desde `main` (`e2ae2b0`) y se implementó íntegramente la **Entrega 2 (*Open Seed Lab*)** del plan de ciencia ciudadana.
+
+### Cambios Implementados
+- **Catálogo Base y Métricas Empíricas ([seedProtocolsCatalog.js](file:///home/ruben/dev/sembrador-arba-elx/src/utils/seedProtocolsCatalog.js)):**
+  - Creado catálogo inicial verificado con 10 especies autóctonas mediterráneas de referencia (`Ceratonia siliqua`, `Quercus coccifera`, `Quercus ilex subsp. ballota`, `Chamaerops humilis`, `Pistacia lentiscus`, `Pinus halepensis`, `Rhamnus lycioides`, `Tetraclinis articulata`, `Olea europaea var. sylvestris`, `Ziziphus lotus`), tipos de latencia `DORMANCY_TYPES`, fusión con aportaciones de Firestore (`mergeProtocolsWithCommunity`) y cálculo del `% de éxito en campo` (`computeProtocolFieldStats`).
+- **Seguridad Firebase ([firestore.rules](file:///home/ruben/dev/sembrador-arba-elx/firestore.rules) vía `firestore-rules-author`):**
+  - Añadidas reglas para `artifacts/arba-elx/public/data/seedProtocols/{protocolId}` (lectura pública con `isSignedIn()`, creación autenticada `'community'` sin falsificación de sello de verificación, verificación `'verified'` exclusiva para Admin) y validación opcional de `protocolId`, `originLocation` y `harvestYear` en `seeds/{seedId}`.
+  - Desplegado ruleset `e26c1055-8ae7-4377-89d3-258afc55ea68` sobre `arba-elx-siembra`.
+- **Interfaz Pública Open Seed Lab ([SeedLabView.jsx](file:///home/ruben/dev/sembrador-arba-elx/src/components/SeedLabView.jsx), [LandingPage.jsx](file:///home/ruben/dev/sembrador-arba-elx/src/components/LandingPage.jsx), [App.jsx](file:///home/ruben/dev/sembrador-arba-elx/src/App.jsx)):**
+  - Acceso directo desde cabecera y hero de `LandingPage.jsx` incluso para usuarios anónimos.
+  - Buscador, filtros por latencia/estado, modal interactivo «Modo Taller Paso a Paso» (checklist de 5 fases), formulario de aportación comunitaria, verificación por SuperAdmin y visualización de tasa empírica de germinación/supervivencia en campo.
+- **Vinculación en Lotes y Exportación ([CampaignManager.jsx](file:///home/ruben/dev/sembrador-arba-elx/src/components/CampaignManager.jsx), [csvUtils.js](file:///home/ruben/dev/sembrador-arba-elx/src/utils/csvUtils.js)):**
+  - Añadido selector de protocolos del *Open Seed Lab* en el alta de lotes (autocompletando tratamiento y especie), campos de procedencia genética (`originLocation`, `harvestYear`), insignias visuales en tarjetas de lote y columnas/propiedades de trazabilidad genética en CSV y GeoJSON.
+
+### Verificación
+- **Tests y Build:** Añadida suite [SeedLabView.test.jsx](file:///home/ruben/dev/sembrador-arba-elx/src/components/SeedLabView.test.jsx) y ampliados [CampaignManager.test.jsx](file:///home/ruben/dev/sembrador-arba-elx/src/components/CampaignManager.test.jsx) y [csvUtils.test.js](file:///home/ruben/dev/sembrador-arba-elx/src/utils/csvUtils.test.js). `npm run test:run`: `10/10` archivos, `28/28` tests en verde; `npm run build`: compilación Vite sin errores (`1567` módulos).
+
+---
+
 ## [2026-11-18] — Entrega 1 de Ciencia Ciudadana en Producción (`main`): Seguimiento Longitudinal, Radar GPS, Clima Open-Meteo, GeoJSON y Optimización AST de Firestore Rules
 
 ### Resumen de la Sesión

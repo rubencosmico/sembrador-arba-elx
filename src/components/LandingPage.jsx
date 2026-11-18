@@ -21,7 +21,7 @@ const LandingPage = ({
     db, appId, user, isSuperAdmin,
     onSelectCampaign, onLoginClick, onClaimClick, onAdminClick,
     onProfileClick, onManageClick,
-    onLogout, onMessagesClick, onSocialClick
+    onLogout, onMessagesClick, onSocialClick, onSeedLabClick
 }) => {
     const [campaigns, setCampaigns] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -131,7 +131,17 @@ const LandingPage = ({
                     <span className="text-xl font-bold tracking-tight">Sembrador Elx</span>
                 </div>
 
-                <div className="flex items-center space-x-4 relative">
+                <div className="flex items-center space-x-3 md:space-x-4 relative">
+                    {onSeedLabClick && (
+                        <button
+                            onClick={onSeedLabClick}
+                            className="bg-slate-800 hover:bg-slate-700 border border-emerald-500/30 text-emerald-300 px-3.5 py-2 rounded-xl text-xs md:text-sm font-bold flex items-center gap-2 transition-all"
+                        >
+                            <span>🧪</span>
+                            <span className="hidden sm:inline">Open Seed Lab</span>
+                            <span className="sm:hidden">Seed Lab</span>
+                        </button>
+                    )}
                     {user && !user.isAnonymous ? (
                         <>
                             <div
@@ -252,6 +262,17 @@ const LandingPage = ({
                     <p className="text-slate-400 text-lg max-w-2xl mx-auto">
                         Descubre jornadas de siembra cerca de ti y ayuda a reconstruir nuestro ecosistema local con tecnología de seguimiento en tiempo real.
                     </p>
+                    {onSeedLabClick && (
+                        <div className="mt-6 flex justify-center">
+                            <button
+                                onClick={onSeedLabClick}
+                                className="px-6 py-3 rounded-2xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/35 text-emerald-300 font-bold text-sm transition-all flex items-center gap-2 shadow-lg shadow-emerald-500/10"
+                            >
+                                <span>🌱</span>
+                                <span>Explorar Biblioteca de Semillas y Tratamientos (Open Seed Lab)</span>
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                 {/* Map Section */}

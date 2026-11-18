@@ -5,7 +5,8 @@ export const generateLogCSV = (logs, seeds = [], campaignId = '') => {
         "Fecha", "Hora", "Jornada", "Equipo", "Especie", "Proveedor",
         "Tratamiento", "Micrositio", "Orientación", "Semillas/Hoyo",
         "Protector", "Sustrato", "Lat", "Lng", "Golpes", "Notas",
-        "Foto URL", "Estado Seguimiento", "Plántulas Vivas", "Revisiones"
+        "Foto URL", "Estado Seguimiento", "Plántulas Vivas", "Revisiones",
+        "Protocolo ID", "Procedencia Genética", "Año Cosecha"
     ];
     const rows = logs.map(log => {
         const date = log.timestamp?.seconds ? new Date(log.timestamp.seconds * 1000) : null;
@@ -34,7 +35,10 @@ export const generateLogCSV = (logs, seeds = [], campaignId = '') => {
             log.photo || log.photoUrl || '',
             checkupLabel,
             log.lastCheckupStatus === 'alive' ? (log.lastSurvivingCount ?? 1) : 0,
-            log.checkupCount || 0
+            log.checkupCount || 0,
+            seed?.protocolId || '',
+            `"${(seed?.originLocation || '').replace(/"/g, '""')}"`,
+            seed?.harvestYear || ''
         ];
     });
 
@@ -68,6 +72,9 @@ export const generateLogGeoJSON = (logs = [], seeds = [], campaignName = '') => 
                     species: log.seedName || seed?.species || 'Desconocida',
                     provider: seed?.provider || null,
                     treatment: seed?.treatment || null,
+                    seedProtocolId: seed?.protocolId || null,
+                    seedOriginLocation: seed?.originLocation || null,
+                    seedHarvestYear: seed?.harvestYear || null,
                     holeCount: parseInt(log.holeCount, 10) || 1,
                     seedsPerHole: log.quantity || '1',
                     microsite: log.microsite || null,

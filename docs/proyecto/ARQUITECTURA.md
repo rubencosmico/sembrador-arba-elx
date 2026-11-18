@@ -38,13 +38,15 @@
     │   ├── imageUtils.js          # Compresión de imágenes en cliente mediante Canvas
     │   ├── logUtils.js            # Filtrado y ordenación de registros de siembra
     │   ├── mapLayers.js           # Definición de capas satélite PNOA/Esri y callejero OSM
-    │   └── monitoringUtils.js     # Distancia Haversine, rumbo, analítica de supervivencia y Open-Meteo
+    │   ├── monitoringUtils.js     # Distancia Haversine, rumbo, analítica de supervivencia y Open-Meteo
+    │   └── seedProtocolsCatalog.js# Catálogo base (10 especies) y métricas empíricas Open Seed Lab
     └── components/
-        ├── LandingPage.jsx        # Entrada pública con mapa satélite global y metadatos multi-colectivo
+        ├── LandingPage.jsx        # Entrada pública con mapa satélite global y acceso a Open Seed Lab
         ├── LoginScreen.jsx        # Autenticación (Email/Password, Magic Link, Google)
         ├── ProfileView.jsx        # Edición de perfil, vinculación de proveedores, cambio de clave
         ├── CampaignDashboard.jsx  # Panel de jornada (KPIs, Modo Seguimiento/Radar, Timelapse, GeoJSON/CSV)
-        ├── CampaignManager.jsx    # Gestión de jornadas (Ajustes + metadatos de bioma, Lotes, Datos)
+        ├── CampaignManager.jsx    # Gestión de jornadas (Ajustes + bioma, Lotes + Open Seed Lab, Datos)
+        ├── SeedLabView.jsx        # Biblioteca pública Open Seed Lab (buscador, talleres, aportaciones)
         ├── MonitoringRadarView.jsx# Radar GPS en campo, mapa de supervivencia, clima Open-Meteo y analítica
         ├── CheckupFormModal.jsx   # Formulario ágil de revisión longitudinal (1 toque + conteo + foto T+N)
         ├── SowerView.jsx          # Vista de campo del sembrador (híbrida: personal o por equipo)
@@ -76,8 +78,13 @@
   - **Metadatos multi-colectivo (opcionales, retrocompatibles):** `organizationName` (por defecto `"ARBA Elx"`), `locationName` (por defecto `"Elche, España"`), `biome` (`'mediterranean_steppe'` | `'mediterranean_forest'` | `'post_fire'` | `'riparian'` | `'coastal_dune'` | `'mountain'` | `'other'`).
 - **`seeds/{seedId}`**:
   - `campaignId`, `species`, `provider`, `treatment`, `photo`, `createdAt`, `deleted`
+  - `protocolId` (opcional, referencia a catálogo/colección `seedProtocols`), `originLocation` (procedencia genética), `harvestYear` (año de cosecha)
   - `totalQuantity`, `remainingQuantity` (numéricos; en datos legacy existe `quantity`)
   - `userAssignments`: `[{ userId, quantity }]` (modelo moderno centrado en usuario).
+- **`seedProtocols/{protocolId}`** *(Biblioteca Pública Open Seed Lab)*:
+  - `scientificName`, `commonName`, `family`, `dormancyType` (`'physical'` | `'physiological'` | `'morphophysiological'` | `'none'`)
+  - `scarification`, `hydrationHours`, `stratification`, `inoculation`, `pelleting`, `harvestSeason`, `sowingSeason`, `summaryRecipe`, `workshopTips`
+  - `status` (`'community'` | `'verified'`), `authorId`, `authorName`, `verifiedBy`, `verifiedAt`, `createdAt`, `updatedAt`.
 - **`groups/{groupId}`** *(Legacy / Retrocompatibilidad)*:
   - `campaignId`, `name`, `assignedSeeds`: `[seedId]`, `createdAt`.
 - **`logs/{logId}`**:

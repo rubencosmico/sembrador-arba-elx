@@ -57,7 +57,15 @@ describe('generateLogGeoJSON', () => {
                 location: { lat: null, lng: null, acc: null }
             }
         ];
-        const seeds = [{ id: 's1', species: 'Ceratonia siliqua', provider: 'ARBA', treatment: 'Agua caliente' }];
+        const seeds = [{
+            id: 's1',
+            species: 'Ceratonia siliqua',
+            provider: 'ARBA',
+            treatment: 'Agua caliente',
+            protocolId: 'proto-ceratonia-siliqua',
+            originLocation: 'Elche Norte',
+            harvestYear: '2026'
+        }];
 
         const geo = JSON.parse(generateLogGeoJSON(logs, seeds, 'Jornada Test'));
         expect(geo.type).toBe('FeatureCollection');
@@ -68,6 +76,9 @@ describe('generateLogGeoJSON', () => {
             coordinates: [-0.6865, 38.2661]
         });
         expect(geo.features[0].properties.treatment).toBe('Agua caliente');
+        expect(geo.features[0].properties.seedProtocolId).toBe('proto-ceratonia-siliqua');
+        expect(geo.features[0].properties.seedOriginLocation).toBe('Elche Norte');
+        expect(geo.features[0].properties.seedHarvestYear).toBe('2026');
         expect(geo.features[0].properties.checkupStatus).toBe('alive');
         expect(geo.features[0].properties.survivingSeedlings).toBe(2);
     });

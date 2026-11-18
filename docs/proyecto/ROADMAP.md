@@ -57,21 +57,21 @@
   - Añadidos `src/utils/monitoringUtils.test.js`, `src/utils/csvUtils.test.js` y `src/components/CampaignDashboard.test.jsx` (`9` suites / `24` tests en verde).
   - Verificación en vivo contra Firestore REST API y fusión en `main` (`e2ae2b0`).
 
-### Entrega 2: Biblioteca Pública Global de Protocolos de Semillas (*Open Seed Lab*) (PENDIENTE)
-- [ ] **1. Higiene de Ramas Previa:**
-  - Eliminar la rama ya fusionada `feature/citizen-science-monitoring` (local y remota) y crear una nueva rama limpia desde `main` (`feature/open-seed-lab`).
-- [ ] **2. Catálogo Base y Reglas de Seguridad (`seedProtocols`):**
-  - Crear `src/utils/seedProtocolsCatalog.js` con las fichas botánicas y protocolos pre-germinativos verificados de 10 especies autóctonas de referencia (*Ceratonia siliqua*, *Quercus coccifera*, *Quercus ilex*, *Chamaerops humilis*, *Pistacia lentiscus*, *Pinus halepensis*, *Rhamnus lycioides*, *Tetraclinis articulata*, *Olea europaea var. sylvestris*, *Ziziphus lotus*).
-  - Estructura estandarizada de receta: nombre científico, nombre común, tipo de latencia, pasos de *Escarificación*, *Hidratación (horas)*, *Estratificación*, *Inoculación / Bioestimulantes*, *Pildorizado / Protectores*, época óptima de recolección y siembra.
-  - Configurar `firestore.rules` (vía `firestore-rules-author`) para `artifacts/arba-elx/public/data/seedProtocols/{protocolId}` (lectura pública, creación por usuarios reales como `'community'` / *En ensayo*, y verificación `'verified'` por Admin) y ampliar `isValidSeed` con `protocolId`, `originLocation` y `harvestYear`.
-- [ ] **3. Interfaz Pública de Biblioteca (`src/components/SeedLabView.jsx`) e Integración en `LandingPage.jsx`:**
-  - Acceso público desde la barra superior y hero de `LandingPage.jsx` (incluso para visitantes sin sesión iniciada).
-  - Buscador por especie, filtros por tipo de tratamiento/latencia y estado (`Verificado` vs `En ensayo`), vista paso a paso para talleres, formulario de aportación comunitaria, botón de verificación para SuperAdmin y cálculo del **% de éxito empírico en campo** cruzando lotes y revisiones reales.
-- [ ] **4. Vinculación con Lotes y Procedencia Genética en `src/components/CampaignManager.jsx`:**
-  - Selector de protocolo de la biblioteca al crear/editar un lote en `CampaignManager.jsx` para autocompletar el tratamiento (`treatment` + `protocolId`).
-  - Campos de procedencia genética del lote: ubicación de recolección (`originLocation`) y año de cosecha (`harvestYear`).
-- [ ] **5. Tests, Build y Validación en Vercel Preview:**
-  - Añadir tests unitarios/integración de la Entrega 2, verificar `npm run test:run` y `npm run build`, desplegar en Vercel Preview y validar antes de fusionar en `main`.
+### Entrega 2: Biblioteca Pública Global de Protocolos de Semillas (*Open Seed Lab*) (IMPLEMENTADA EN `feature/open-seed-lab`)
+- [x] **1. Higiene de Ramas Previa:**
+  - Eliminada la rama fusionada `feature/citizen-science-monitoring` (local y remota) y creada la rama limpia `feature/open-seed-lab` desde `main`.
+- [x] **2. Catálogo Base y Reglas de Seguridad (`seedProtocols`):**
+  - Creado `src/utils/seedProtocolsCatalog.js` con fichas botánicas y protocolos pre-germinativos verificados de 10 especies autóctonas de referencia (*Ceratonia siliqua*, *Quercus coccifera*, *Quercus ilex*, *Chamaerops humilis*, *Pistacia lentiscus*, *Pinus halepensis*, *Rhamnus lycioides*, *Tetraclinis articulata*, *Olea europaea var. sylvestris*, *Ziziphus lotus*), más `mergeProtocolsWithCommunity` y `computeProtocolFieldStats`.
+  - Actualizado y desplegado `firestore.rules` (ruleset `e26c1055-8ae7-4377-89d3-258afc55ea68` vía `firestore-rules-author`) para `artifacts/arba-elx/public/data/seedProtocols/{protocolId}` (lectura pública, creación autenticada `'community'` y verificación `'verified'` por Admin) y campos `protocolId`, `originLocation`, `harvestYear` en `seeds`.
+- [x] **3. Interfaz Pública de Biblioteca (`src/components/SeedLabView.jsx`) e Integración en `LandingPage.jsx`:**
+  - Acceso público desde cabecera y hero de `LandingPage.jsx` e integración en `App.jsx` (incluso para visitantes sin sesión iniciada).
+  - Buscador por especie/tratamiento, filtros por tipo de latencia y estado (`Verificado` vs `En ensayo`), modal interactivo paso a paso para talleres, formulario de aportación comunitaria, verificación para SuperAdmin y cálculo del **% de éxito empírico en campo** cruzando lotes y revisiones reales.
+- [x] **4. Vinculación con Lotes y Procedencia Genética en `src/components/CampaignManager.jsx` y `src/utils/csvUtils.js`:**
+  - Selector de protocolo de la biblioteca al crear un lote en `CampaignManager.jsx` para autocompletar tratamiento y especie, junto a los campos de procedencia genética (`originLocation`, `harvestYear`) y exportación en CSV/GeoJSON.
+- [x] **5. Tests Unitarios y Build de Producción:**
+  - Añadida suite `src/components/SeedLabView.test.jsx` y ampliados `src/components/CampaignManager.test.jsx` y `src/utils/csvUtils.test.js` (`10` suites / `28` tests en verde; `npm run build` con `1567` módulos).
+- [ ] **6. Validación en Vercel Preview y Paso a Producción (`main`):**
+  - Validar la interfaz de *Open Seed Lab* en el despliegue Preview de `feature/open-seed-lab` antes de fusionar en `main`.
 
 ---
 

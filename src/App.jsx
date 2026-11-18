@@ -25,6 +25,7 @@ import MessagesView from './components/MessagesView';
 import ChatWindow from './components/ChatWindow';
 import SocialView from './components/SocialView';
 import ProfileView from './components/ProfileView';
+import SeedLabView from './components/SeedLabView';
 
 // Utils
 import MigratePhotos from './utils/migrate-photos';
@@ -295,7 +296,7 @@ function App() {
             setCurrentView('home');
         } else if (id === 'campaign') {
             setRole(null);
-        } else if (['profile', 'social', 'messages', 'claim', 'manage', 'admin'].includes(id)) {
+        } else if (['profile', 'social', 'messages', 'claim', 'manage', 'admin', 'seedlab'].includes(id)) {
             setCurrentView(id);
             if (id !== 'manage' || !campaign) {
                 setCampaign(null);
@@ -478,6 +479,21 @@ function App() {
         return <LoginScreen onLoginSuccess={(u) => { setUser(u); setShowLogin(false); }} onBack={() => setShowLogin(false)} />;
     }
 
+    // Open Seed Lab (Public & Community Library)
+    if (currentView === 'seedlab') {
+        return (
+            <SeedLabView
+                db={db}
+                appId={appId}
+                user={user}
+                userProfile={userProfile}
+                isSuperAdmin={isSuperAdmin}
+                onBack={() => handleNavigate('home')}
+                onLoginClick={() => setShowLogin(true)}
+            />
+        );
+    }
+
     // 1. Campaign Manager / My Campaigns
     if (currentView === 'manage' && user && !user.isAnonymous) {
         return (
@@ -556,6 +572,7 @@ function App() {
                 onManageClick={() => setCurrentView('manage')}
                 onMessagesClick={() => setCurrentView('messages')}
                 onSocialClick={() => setCurrentView('social')}
+                onSeedLabClick={() => setCurrentView('seedlab')}
                 onLogout={handleLogout}
             />
         );

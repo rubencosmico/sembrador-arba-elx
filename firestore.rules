@@ -78,6 +78,9 @@ service cloud.firestore {
     //   - remainingQuantity: number | null (optional, 0..1000000)
     //   - quantity: number | string | null (optional, legacy compat)
     //   - photo: string | null (optional, data:image/* or http(s) URL <= 350000 chars)
+    //   - protocolId: string | null (optional, <= 128 chars)
+    //   - originLocation: string | null (optional, <= 200 chars)
+    //   - harvestYear: string | number | null (optional, <= 10 chars or 1900..2100)
     //   - assignedSeeds: list (optional, <= 500 items)
     //   - userAssignments: list (optional, <= 500 items)
     //   - deleted: bool (optional)
@@ -133,6 +136,29 @@ service cloud.firestore {
     //   - reviewerId: string (required, 1..128 chars, == request.auth.uid on create; immutable)
     //   - reviewerName: string | null (optional, <= 150 chars)
     //   - timestamp: timestamp (required; immutable)
+    //
+    // Collection: artifacts/{appId}/public/data/seedProtocols/{protocolId}
+    // Fields:
+    //   - scientificName: string (required, 1..200 chars)
+    //   - commonName: string (required, 1..200 chars)
+    //   - family: string | null (optional, <= 150 chars)
+    //   - dormancyType: string (required, 'physical' | 'physiological' | 'morphophysiological' | 'none')
+    //   - scarification: string | null (optional, <= 2000 chars)
+    //   - hydrationHours: number | null (optional, 0..2000)
+    //   - stratification: string | null (optional, <= 2000 chars)
+    //   - inoculation: string | null (optional, <= 2000 chars)
+    //   - pelleting: string | null (optional, <= 2000 chars)
+    //   - harvestSeason: string | null (optional, <= 200 chars)
+    //   - sowingSeason: string | null (optional, <= 200 chars)
+    //   - summaryRecipe: string (required, 1..500 chars)
+    //   - workshopTips: string | null (optional, <= 2000 chars)
+    //   - status: string (required, 'community' | 'verified')
+    //   - authorId: string (required, 1..128 chars, == request.auth.uid on create; immutable)
+    //   - authorName: string | null (optional, <= 150 chars)
+    //   - verifiedBy: string | null (optional, <= 150 chars)
+    //   - verifiedAt: timestamp | null (optional)
+    //   - createdAt: timestamp (required; immutable)
+    //   - updatedAt: timestamp | null (optional)
     //
     // ===============================================================
 
@@ -408,6 +434,15 @@ service cloud.firestore {
              );
     }
 
+    function isValidSeedMeta(data) {
+      let protocolId = data.get('protocolId', null);
+      let originLocation = data.get('originLocation', null);
+      let harvestYear = data.get('harvestYear', null);
+      return (protocolId == null || (protocolId is string && protocolId.size() <= 128)) &&
+             (originLocation == null || (originLocation is string && originLocation.size() <= 200)) &&
+             (harvestYear == null || (harvestYear is string && harvestYear.size() <= 10) || (harvestYear is number && harvestYear >= 1900 && harvestYear <= 2100));
+    }
+
     function isValidSeed(data) {
       let provider = data.get('provider', null);
       let treatment = data.get('treatment', null);
@@ -416,8 +451,9 @@ service cloud.firestore {
       let photo = data.get('photo', null);
       return data.keys().hasOnly([
                'campaignId', 'species', 'provider', 'treatment',
-               'totalQuantity', 'remainingQuantity', 'quantity', 'photo', 'assignedSeeds',
-               'userAssignments', 'deleted', 'createdAt'
+               'totalQuantity', 'remainingQuantity', 'quantity', 'photo',
+               'protocolId', 'originLocation', 'harvestYear',
+               'assignedSeeds', 'userAssignments', 'deleted', 'createdAt'
              ]) &&
              data.keys().hasAll(['campaignId', 'species']) &&
              validString(data.campaignId, 1, 128) &&
@@ -428,10 +464,73 @@ service cloud.firestore {
              (remaining == null || (remaining is number && remaining >= 0 && remaining <= 1000000)) &&
              (quantity == null || (quantity is string && quantity.size() <= 50) || (quantity is number && quantity >= 0 && quantity <= 1000000)) &&
              (photo == null || photo == '' || (photo is string && photo.size() <= 350000 && (photo.matches("^data:image/.*") || isValidUrl(photo)))) &&
+             isValidSeedMeta(data) &&
              (!('assignedSeeds' in data) || (data.assignedSeeds is list && data.assignedSeeds.size() <= 500)) &&
              (!('userAssignments' in data) || (data.userAssignments is list && data.userAssignments.size() <= 500)) &&
              (!('deleted' in data) || data.deleted is bool) &&
              (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidSeedProtocolCore(data) {
+      let keys = data.keys();
+      let family = data.get('family', null);
+      let hydration = data.get('hydrationHours', null);
+      return keys.hasOnly([
+               'scientificName', 'commonName', 'family', 'dormancyType',
+               'scarification', 'hydrationHours', 'stratification', 'inoculation',
+               'pelleting', 'harvestSeason', 'sowingSeason', 'summaryRecipe',
+               'workshopTips', 'status', 'authorId', 'authorName',
+               'verifiedBy', 'verifiedAt', 'createdAt', 'updatedAt'
+             ]) &&
+             keys.hasAll([
+               'scientificName', 'commonName', 'dormancyType',
+               'summaryRecipe', 'status', 'authorId', 'createdAt'
+             ]) &&
+             validString(data.scientificName, 1, 200) &&
+             validString(data.commonName, 1, 200) &&
+             (family == null || (family is string && family.size() <= 150)) &&
+             data.dormancyType is string &&
+             data.dormancyType in ['physical', 'physiological', 'morphophysiological', 'none'] &&
+             validString(data.summaryRecipe, 1, 500) &&
+             (hydration == null || (hydration is number && hydration >= 0 && hydration <= 2000)) &&
+             data.status is string &&
+             data.status in ['community', 'verified'] &&
+             validString(data.authorId, 1, 128) &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidSeedProtocolSteps(data) {
+      let scarification = data.get('scarification', null);
+      let stratification = data.get('stratification', null);
+      let inoculation = data.get('inoculation', null);
+      let pelleting = data.get('pelleting', null);
+      let workshopTips = data.get('workshopTips', null);
+      return (scarification == null || (scarification is string && scarification.size() <= 2000)) &&
+             (stratification == null || (stratification is string && stratification.size() <= 2000)) &&
+             (inoculation == null || (inoculation is string && inoculation.size() <= 2000)) &&
+             (pelleting == null || (pelleting is string && pelleting.size() <= 2000)) &&
+             (workshopTips == null || (workshopTips is string && workshopTips.size() <= 2000));
+    }
+
+    function isValidSeedProtocolMeta(data) {
+      let harvestSeason = data.get('harvestSeason', null);
+      let sowingSeason = data.get('sowingSeason', null);
+      let authorName = data.get('authorName', null);
+      let verifiedBy = data.get('verifiedBy', null);
+      let verifiedAt = data.get('verifiedAt', null);
+      let updatedAt = data.get('updatedAt', null);
+      return (harvestSeason == null || (harvestSeason is string && harvestSeason.size() <= 200)) &&
+             (sowingSeason == null || (sowingSeason is string && sowingSeason.size() <= 200)) &&
+             (authorName == null || (authorName is string && authorName.size() <= 150)) &&
+             (verifiedBy == null || (verifiedBy is string && verifiedBy.size() <= 150)) &&
+             (verifiedAt == null || verifiedAt is timestamp) &&
+             (updatedAt == null || updatedAt is timestamp);
+    }
+
+    function isValidSeedProtocol(data) {
+      return isValidSeedProtocolCore(data) &&
+             isValidSeedProtocolSteps(data) &&
+             isValidSeedProtocolMeta(data);
     }
 
     function isValidGroup(data) {
@@ -912,6 +1011,49 @@ service cloud.firestore {
                         'campaignId' in resource.data &&
                         resource.data.campaignId != null &&
                         isCampaignManager(appId, resource.data.campaignId)
+                      )
+                    );
+    }
+
+    match /artifacts/{appId}/public/data/seedProtocols/{protocolId} {
+      allow read: if isSignedIn();
+
+      allow create: if isRealUser() &&
+                    request.resource != null &&
+                    isValidSeedProtocol(request.resource.data) &&
+                    request.resource.data.authorId == request.auth.uid &&
+                    (
+                      isAdmin() ||
+                      (
+                        request.resource.data.status == 'community' &&
+                        request.resource.data.get('verifiedBy', null) == null &&
+                        request.resource.data.get('verifiedAt', null) == null
+                      )
+                    );
+
+      allow update: if isRealUser() &&
+                    request.resource != null &&
+                    resource != null &&
+                    isValidSeedProtocol(request.resource.data) &&
+                    (
+                      isAdmin() ||
+                      (
+                        isRealOwner(resource.data.authorId) &&
+                        resource.data.status == 'community' &&
+                        request.resource.data.status == 'community' &&
+                        areImmutableFieldsUnchanged(['authorId', 'createdAt']) &&
+                        request.resource.data.get('verifiedBy', null) == null &&
+                        request.resource.data.get('verifiedAt', null) == null
+                      )
+                    );
+
+      allow delete: if isRealUser() &&
+                    resource != null &&
+                    (
+                      isAdmin() ||
+                      (
+                        isRealOwner(resource.data.authorId) &&
+                        resource.data.status == 'community'
                       )
                     );
     }

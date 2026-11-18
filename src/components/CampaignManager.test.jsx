@@ -217,4 +217,61 @@ describe('CampaignManager', () => {
             expect(screen.getByText('38.266900, -0.698300')).toBeInTheDocument();
         });
     });
+
+    it('links an Open Seed Lab protocol and saves genetic provenance on new seed lot', async () => {
+        firestore.addDoc.mockResolvedValue({ id: 'new-seed-1' });
+
+        render(
+            <CampaignManager
+                db={mockDb}
+                appId={mockAppId}
+                user={mockUser}
+                isSuperAdmin={false}
+                initialCampaignId="camp-1"
+                onBack={vi.fn()}
+                onNavigate={vi.fn()}
+            />
+        );
+
+        await waitFor(() => {
+            expect(screen.getByRole('heading', { name: 'Jornada Serra del Molar' })).toBeInTheDocument();
+        });
+
+        fireEvent.click(screen.getByText('Lotes'));
+
+        const protocolSelect = await screen.findByLabelText('Protocolo Open Seed Lab');
+        fireEvent.change(protocolSelect, { target: { value: 'proto-ceratonia-siliqua' } });
+
+        const speciesInput = screen.getByPlaceholderText('Ej: Encina, Algarrobo...');
+        const treatmentInput = screen.getByPlaceholderText('Ej: Lijada, Hidropriming...');
+        expect(speciesInput.value).toBe('Algarrobo');
+        expect(treatmentInput.value).toBe('Escarificación mecánica/térmica + Hidratación 24h');
+
+        fireEvent.change(screen.getByPlaceholderText('Procedencia genética (ej: Serra del Molar)'), {
+            target: { value: 'Serra del Molar' }
+        });
+        fireEvent.change(screen.getByPlaceholderText('Año cosecha (ej: 2026)'), {
+            target: { value: '2026' }
+        });
+
+        const totalQtyInputs = screen.getAllByPlaceholderText('0');
+        fireEvent.change(totalQtyInputs[0], { target: { value: '100' } });
+
+        fireEvent.click(screen.getByRole('button', { name: /Guardar Semillas/i }));
+
+        await waitFor(() => {
+            expect(firestore.addDoc).toHaveBeenCalledWith(
+                'artifacts/test-app/public/data/seeds',
+                expect.objectContaining({
+                    campaignId: 'camp-1',
+                    species: 'Algarrobo',
+                    treatment: 'Escarificación mecánica/térmica + Hidratación 24h',
+                    protocolId: 'proto-ceratonia-siliqua',
+                    originLocation: 'Serra del Molar',
+                    harvestYear: '2026',
+                    totalQuantity: 100
+                })
+            );
+        });
+    });
 });

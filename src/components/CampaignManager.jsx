@@ -16,6 +16,7 @@ import { compressImage } from '../utils/imageUtils';
 import { filterAndSortLogs } from '../utils/logUtils';
 import { generateLogCSV, generateLogGeoJSON } from '../utils/csvUtils';
 import { BIOME_OPTIONS } from '../utils/monitoringUtils';
+import { mergeProtocolsWithCommunity } from '../utils/seedProtocolsCatalog';
 import MapView from './MapView';
 import Breadcrumbs from './Breadcrumbs';
 
@@ -39,7 +40,17 @@ const CampaignManager = ({
     // Deep Management State
     const [campSeeds, setCampSeeds] = useState([]);
     const [participants, setParticipants] = useState([]);
-    const [newSeed, setNewSeed] = useState({ species: '', provider: '', treatment: '', totalQuantity: '', photo: null });
+    const [communityProtocols, setCommunityProtocols] = useState([]);
+    const [newSeed, setNewSeed] = useState({
+        species: '',
+        provider: '',
+        treatment: '',
+        totalQuantity: '',
+        protocolId: '',
+        originLocation: '',
+        harvestYear: '',
+        photo: null
+    });
     const [activeTab, setActiveTab] = useState('config'); // 'config' | 'seeds' | 'data'
 
     // Results State (Internalized from CoordinatorView)
@@ -141,6 +152,16 @@ const CampaignManager = ({
             setLogs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
         });
 
+        // Seed Protocols (Open Seed Lab)
+        const unsubProtocols = onSnapshot(
+            collection(db, ...dataPath, 'seedProtocols'),
+            (snap) => {
+                if (!isMounted) return;
+                setCommunityProtocols(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            },
+            (err) => console.error('Error fetching seedProtocols:', err)
+        );
+
         // Participants (fetch user profiles)
         const camp = allCampaigns.find(c => c.id === selectedCampaignId);
         if (camp?.participants?.length > 0) {
@@ -159,6 +180,7 @@ const CampaignManager = ({
             isMounted = false;
             unsubSeeds();
             unsubLogs();
+            unsubProtocols();
         };
     }, [selectedCampaignId, db, appId, allCampaigns]);
 
@@ -213,13 +235,25 @@ const CampaignManager = ({
         try {
             await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'seeds'), {
                 ...newSeed,
+                protocolId: newSeed.protocolId || null,
+                originLocation: newSeed.originLocation?.trim() || null,
+                harvestYear: newSeed.harvestYear ? String(newSeed.harvestYear).trim() : null,
                 campaignId: selectedCampaignId,
                 totalQuantity: parseInt(newSeed.totalQuantity),
                 assignedSeeds: [], // Legacy compat
                 userAssignments: [], // New user-centric assignments
                 createdAt: serverTimestamp()
             });
-            setNewSeed({ species: '', provider: '', treatment: '', totalQuantity: '', photo: null });
+            setNewSeed({
+                species: '',
+                provider: '',
+                treatment: '',
+                totalQuantity: '',
+                protocolId: '',
+                originLocation: '',
+                harvestYear: '',
+                photo: null
+            });
         } catch (e) {
             console.error(e);
             alert("Error añadiendo lote");
@@ -417,6 +451,16 @@ const CampaignManager = ({
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
     };
+
+    const availableProtocols = React.useMemo(
+        () => mergeProtocolsWithCommunity(communityProtocols),
+        [communityProtocols]
+    );
+
+    const protocolById = React.useMemo(
+        () => new Map(availableProtocols.map((p) => [p.id, p])),
+        [availableProtocols]
+    );
 
     const totalHoles = logs.reduce((acc, log) => acc + (parseInt(log.holeCount) || 1), 0);
 
@@ -683,6 +727,37 @@ const CampaignManager = ({
                                     </h3>
                                     <form onSubmit={handleAddSeed} className="space-y-4">
                                         <div className="space-y-1.5">
+                                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
+                                                Protocolo Open Seed Lab (Opcional)
+                                            </label>
+                                            <select
+                                                aria-label="Protocolo Open Seed Lab"
+                                                value={newSeed.protocolId}
+                                                onChange={(e) => {
+                                                    const selectedId = e.target.value;
+                                                    const proto = protocolById.get(selectedId);
+                                                    if (!proto) {
+                                                        setNewSeed(prev => ({ ...prev, protocolId: '' }));
+                                                        return;
+                                                    }
+                                                    setNewSeed(prev => ({
+                                                        ...prev,
+                                                        protocolId: proto.id,
+                                                        treatment: proto.summaryRecipe,
+                                                        species: prev.species.trim() ? prev.species : proto.commonName
+                                                    }));
+                                                }}
+                                                className="w-full bg-slate-950/50 border border-white/10 rounded-2xl p-4 text-sm font-bold focus:ring-2 focus:ring-emerald-500/50 outline-none"
+                                            >
+                                                <option value="">Personalizado / Sin protocolo</option>
+                                                {availableProtocols.map((p) => (
+                                                    <option key={p.id} value={p.id}>
+                                                        {p.commonName} ({p.scientificName}) {p.status === 'verified' ? '✓' : '· En ensayo'}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="space-y-1.5">
                                             <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Especie</label>
                                             <input
                                                 placeholder="Ej: Encina, Algarrobo..."
@@ -709,6 +784,29 @@ const CampaignManager = ({
                                                     className="w-full bg-slate-950/50 border border-white/10 rounded-2xl p-4 text-sm font-bold focus:ring-2 focus:ring-emerald-500/50 outline-none"
                                                     value={newSeed.totalQuantity}
                                                     onChange={e => setNewSeed({ ...newSeed, totalQuantity: e.target.value })}
+                                                />
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="space-y-1.5">
+                                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Procedencia Genética</label>
+                                                <input
+                                                    placeholder="Procedencia genética (ej: Serra del Molar)"
+                                                    className="w-full bg-slate-950/50 border border-white/10 rounded-2xl p-4 text-sm font-bold focus:ring-2 focus:ring-emerald-500/50 outline-none"
+                                                    value={newSeed.originLocation}
+                                                    onChange={e => setNewSeed({ ...newSeed, originLocation: e.target.value })}
+                                                />
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Año de Cosecha</label>
+                                                <input
+                                                    type="number"
+                                                    min="1900"
+                                                    max="2100"
+                                                    placeholder="Año cosecha (ej: 2026)"
+                                                    className="w-full bg-slate-950/50 border border-white/10 rounded-2xl p-4 text-sm font-bold focus:ring-2 focus:ring-emerald-500/50 outline-none"
+                                                    value={newSeed.harvestYear}
+                                                    onChange={e => setNewSeed({ ...newSeed, harvestYear: e.target.value })}
                                                 />
                                             </div>
                                         </div>
@@ -772,8 +870,23 @@ const CampaignManager = ({
                                                             </button>
                                                         </div>
                                                         <div className="flex flex-wrap gap-2 mt-2">
-                                                            <span className="text-[10px] font-black bg-white/5 text-slate-400 px-2 py-1 rounded-lg border border-white/10 uppercase tracking-widest">{seed.provider}</span>
+                                                            {seed.provider && <span className="text-[10px] font-black bg-white/5 text-slate-400 px-2 py-1 rounded-lg border border-white/10 uppercase tracking-widest">{seed.provider}</span>}
                                                             {seed.treatment && <span className="text-[10px] font-black bg-amber-500/10 text-amber-500 px-2 py-1 rounded-lg border border-amber-500/20 uppercase tracking-widest">{seed.treatment}</span>}
+                                                            {seed.protocolId && (
+                                                                <span className="text-[10px] font-black bg-emerald-500/10 text-emerald-400 px-2 py-1 rounded-lg border border-emerald-500/20 uppercase tracking-widest">
+                                                                    {protocolById.get(seed.protocolId)?.commonName ? `Open Seed Lab: ${protocolById.get(seed.protocolId).commonName}` : 'Open Seed Lab'}
+                                                                </span>
+                                                            )}
+                                                            {seed.originLocation && (
+                                                                <span className="text-[10px] font-black bg-teal-500/10 text-teal-300 px-2 py-1 rounded-lg border border-teal-500/20 uppercase tracking-widest">
+                                                                    📍 {seed.originLocation}
+                                                                </span>
+                                                            )}
+                                                            {seed.harvestYear && (
+                                                                <span className="text-[10px] font-black bg-blue-500/10 text-blue-300 px-2 py-1 rounded-lg border border-blue-500/20 uppercase tracking-widest">
+                                                                    Cosecha {seed.harvestYear}
+                                                                </span>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 </div>
